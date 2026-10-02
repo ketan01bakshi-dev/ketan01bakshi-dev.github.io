@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ketan Bakshi — Test Architect | HIL &amp; ML Ops for V&amp;V</title>
+  <meta name="description" content="Test Architect — XIL/HIL verification, ISO 26262, and an ML Ops prototype on real HIL benches for automotive V&amp;V at Daimler Truck DTICI." />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta property="og:title" content="Ketan Bakshi — Test Architect | HIL &amp; ML Ops for V&amp;V" />
+  <meta property="og:description" content="HIL verification, ISO 26262, and an ML Ops prototype on real HIL benches for automotive V&amp;V at Daimler Truck DTICI." />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="/favicon.svg" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=Source+Sans+3:wght@400;600;700&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="site">
+    <div class="wrap">
+      <span class="brand">Ketan Bakshi</span>
+      <p class="tagline">Test Architect · System Integration · HIL Verification · ML Ops for V&amp;V</p>
+      <div class="contact-row">
+        <a href="mailto:ketan01bakshi@gmail.com">ketan01bakshi@gmail.com</a>
+        <a href="tel:+917566099983">+91-7566099983</a>
+        <span>Bangalore, India</span>
+        <a href="https://linkedin.com/in/ketan-bakshi-b9380950" rel="noopener">LinkedIn</a>
+        <a href="https://github.com/ketan01bakshi-dev" rel="noopener">GitHub</a>
+      </div>
+    </div>
+  </header>
+
+  <nav class="page-nav" aria-label="On this page">
+    <div class="wrap nav-inner">
+      <a href="/">Overview</a>
+      <a href="#pipeline">Pipeline</a>
+      <a href="#resume">Resume</a>
+    </div>
+  </nav>
+
+  <main class="wrap">
+    <section class="hero hero-compact">
+      <h1>ML Ops pipeline — technical deep dive</h1>
+      <p class="lede">
+        Detailed architecture for the Modular Systems Integration Lab V&amp;V chain, a POC built
+        at Daimler Truck and scaled to real dSPACE SCALEXIO rigs.
+        Profile overview, skills, and career snapshot live on the
+        <a href="/">home page</a>.
+      </p>
+      <a class="btn btn-secondary" href="/">Back to overview</a>
+    </section>
+
+    <section id="pipeline">
+      <h2><span class="sec-num">01 /</span> <span class="sec-title">ML Ops for automotive V&amp;V</span></h2>
+      <p class="section-lead">
+        <strong>Daimler Truck DTICI — Modular Systems Integration Lab</strong> ·
+        e-Mobility HIL (e-torque, charging, BMS, ACC/AEB) ·
+        <span class="mono">DOORS NG</span> · <span class="mono">SCALEXIO</span> ·
+        ECU Test / Python · in-house CAN Analyzer
+      </p>
+
+      <ol class="pipeline-strip" aria-label="Pipeline stages">
+        <li>
+          <button type="button" class="stage-btn" data-stage="design" aria-pressed="false">
+            <span class="step-num">1</span><span class="step-label">Design</span><span class="step-desc">Diagrams &amp; specs</span>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="stage-btn" data-stage="derive" aria-pressed="false">
+            <span class="step-num">2</span><span class="step-label">Derive</span><span class="step-desc">Functional + FuSa</span>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="stage-btn" data-stage="execute" aria-pressed="false">
+            <span class="step-num">3</span><span class="step-label">Execute</span><span class="step-desc">SCALEXIO / ECU Test</span>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="stage-btn" data-stage="observe" aria-pressed="false">
+            <span class="step-num">4</span><span class="step-label">Observe</span><span class="step-desc">CAN Analyzer</span>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="stage-btn" data-stage="closeloop" aria-pressed="false">
+            <span class="step-num">5</span><span class="step-label">Close-loop</span><span class="step-desc">Agent compare + RCA</span>
+          </button>
+        </li>
+      </ol>
+
+      <details class="code-snippet-wrap">
+        <summary>View sample JSON test specification (Output from Design step)</summary>
+        <div class="code-block-container">
+          <pre><code class="language-json">{
+  "req_id": "SYS_REQ_001",
+  "test_objective": "Verify ACC engages only when speed > 30 km/h",
+  "signals_under_test": ["V_Veh_Speed", "St_ACC_Engage"],
+  "preconditions": ["System is ON", "No active DTCs"],
+  "steps": [
+    "Set V_Veh_Speed = 25 km/h",
+    "Trigger ACC_Engage_Req",
+    "Verify St_ACC_Engage == INACTIVE",
+    "Set V_Veh_Speed = 35 km/h",
+    "Trigger ACC_Engage_Req",
+    "Verify St_ACC_Engage == ACTIVE"
+  ],
+  "expected_result": "ACC state transitions to ACTIVE only above threshold"
+}</code></pre>
+        </div>
+        <p class="code-note">Note: Concept implementation showing LLM schema enforcement</p>
+      </details>
+
+      <ul class="ops-chips" aria-label="ML Ops properties">
+        <li>Versioned artifacts</li>
+        <li>Schema validation</li>
+        <li>Human sign-off gates</li>
+        <li>Audit logs</li>
+      </ul>
+
+      <details class="flow-details">
+        <summary>Detailed stage flow</summary>
+        <ol class="compact">
+          <li><strong>Design</strong> — DOORS NG → GPT-4o integration diagrams (Python API) → rule-based real vs soft on SCALEXIO → GPT-4o-mini test specs (JSON schema)</li>
+          <li><strong>Functional derive</strong> — llama3.2 (Ollama) signal enumeration &amp; ISTQB EP/BVA → rule-based platform sanity → ECU pin faults → GPT-4o ECU Test scripts</li>
+          <li><strong>FuSa derive</strong> — rule-based ASIL promotion → GPT-4o HARA cases (human sign-off) → GPT-4o-mini bus/message fault expansion</li>
+          <li><strong>Execute &amp; observe</strong> — SCALEXIO / ECU Test → in-house CAN Analyzer decode (Python)</li>
+          <li><strong>Agentic close-loop</strong> — GPT-4o compare vs DOORS NG → nomic-embed-text RAG on JIRA/Confluence → GPT-4o RCA → GPT-4o-mini draft tickets (human approve)</li>
+        </ol>
+      </details>
+
+      <h3>Models per stage</h3>
+      <ul class="runtime-legend" aria-label="Runtime legend">
+        <li><span class="dot dot-api" aria-hidden="true"></span> Python API</li>
+        <li><span class="dot dot-ollama" aria-hidden="true"></span> Ollama</li>
+        <li><span class="dot dot-rule" aria-hidden="true"></span> Rule / VS Code</li>
+        <li><span class="dot dot-hil" aria-hidden="true"></span> HIL</li>
+      </ul>
+      <p id="table-filter-hint" class="table-filter-hint" aria-live="polite"></p>
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr><th>Stage</th><th>Step</th><th>Model</th><th>Runtime</th></tr>
+          </thead>
+          <tbody>
+            <tr data-stage="Parse"><td>Parse</td><td>ARXML / DBC / A2L / CAN</td><td class="mono">Rule / Python</td><td class="mono">VS Code</td></tr>
+            <tr data-stage="Design"><td>Design</td><td>Integration diagrams</td><td class="mono">GPT-4o</td><td class="mono">Python → Azure OpenAI</td></tr>
+            <tr data-stage="Design"><td>Design</td><td>Real vs soft</td><td class="mono">Rule-based</td><td class="mono">Python</td></tr>
+            <tr data-stage="Design"><td>Design</td><td>User story → test specs</td><td class="mono">GPT-4o-mini</td><td class="mono">Python API</td></tr>
+            <tr data-stage="Functional"><td>Functional</td><td>Signal enum / ISTQB</td><td class="mono">llama3.2</td><td class="mono">Ollama</td></tr>
+            <tr data-stage="Functional"><td>Functional</td><td>Platform sanity</td><td class="mono">Rule-based</td><td class="mono">Python</td></tr>
+            <tr data-stage="Functional"><td>Functional</td><td>ECU Test scripts</td><td class="mono">GPT-4o</td><td class="mono">Python API</td></tr>
+            <tr data-stage="FuSa"><td>FuSa</td><td>ASIL from DOORS</td><td class="mono">Rule-based</td><td class="mono">Python</td></tr>
+            <tr data-stage="FuSa"><td>FuSa</td><td>HARA → cases</td><td class="mono">GPT-4o + human</td><td class="mono">Python API</td></tr>
+            <tr data-stage="FuSa"><td>FuSa</td><td>Bus/message faults</td><td class="mono">GPT-4o-mini</td><td class="mono">Python API</td></tr>
+            <tr data-stage="Execute"><td>Execute</td><td>SCALEXIO / ECU Test</td><td class="mono">No model</td><td class="mono">HIL</td></tr>
+            <tr data-stage="Observe"><td>Observe</td><td>CAN Analyzer</td><td class="mono">Python; GPT-4o-mini</td><td class="mono">VS Code / Python API</td></tr>
+            <tr data-stage="Agent"><td>Agent</td><td>Compare vs requirements</td><td class="mono">GPT-4o</td><td class="mono">Python API</td></tr>
+            <tr data-stage="Agent"><td>Agent</td><td>JIRA/Confluence RAG</td><td class="mono">nomic-embed-text</td><td class="mono">Ollama</td></tr>
+            <tr data-stage="Agent"><td>Agent</td><td>Root-cause ranking</td><td class="mono">GPT-4o + tools</td><td class="mono">Python API</td></tr>
+            <tr data-stage="Agent"><td>Agent</td><td>Ticket/wiki drafts</td><td class="mono">GPT-4o-mini</td><td class="mono">Python API</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>How it stitches together</h3>
+      <div class="mermaid-wrap">
+        <div class="mermaid">
+          graph TD
+            A[DOORS NG Requirements] -->|Python API + GPT-4o| B[Integration Diagrams]
+            B -->|Rule-based| C[Real vs Soft on SCALEXIO]
+            C -->|Python API + GPT-4o-mini| D[JSON Test Specs]
+            D -->|Ollama + llama3.2| E[Signal Enum &amp; ISTQB]
+            E -->|GPT-4o| F[ECU Test Scripts]
+            F -->|Execute| G[HIL / SCALEXIO]
+            G -->|CAN Analyzer| H[Observed Logs]
+            H -->|GPT-4o| I[Agent Compare]
+            I -->|Ollama RAG| J[JIRA / Confluence Context]
+            J -->|GPT-4o + tools| K[Root Cause Analysis]
+            K -->|GPT-4o-mini| L[Drafts: Human Approval]
+        </div>
+      </div>
+      
+      <div class="pipeline-steps">
+        <ol>
+          <li>Python orchestrator in VS Code writes stage artifacts to <code>campaign/00…11/</code> folders</li>
+          <li>High-reasoning steps (diagrams, HARA, compare, RCA) via OpenAI-compatible API from Python; bulk ISTQB + embeddings via Ollama</li>
+          <li>Human gates: after diagrams, after HARA lock, after ECU Test scripts, before JIRA/Confluence publish</li>
+          <li>LLMs never invent signal IDs or ASIL levels — only DOORS, ARXML/DBC, and the CAN Analyzer ground truth</li>
+        </ol>
+      </div>
+
+      <p class="footnote">
+        Same ML Ops pattern (ingest → structured model → human sign-off → artifact) shipped in production outside automotive
+        (Aarogya One Connect, <a href="https://github.com/ketan01bakshi-dev/Healthcare-Secure">Healthcare-Secure</a> — transferable pipeline discipline, not a career pivot).
+      </p>
+    </section>
+
+    <section id="resume">
+      <h2><span class="sec-num">02 /</span> <span class="sec-title">Resume</span></h2>
+      <p>Current résumé (Word) — System Integration / HIL focus.</p>
+      <a class="btn btn-secondary" href="/assets/resume.docx" download="Ketan_Bakshi_Resume.docx">Download résumé (Word)</a>
+      <a class="btn" href="/" style="margin-left: 0.5rem;">Back to overview</a>
+    </section>
+  </main>
+
+  <footer class="site">
+    <div class="wrap">
+      &copy; 2026 Ketan Bakshi · Automotive V&amp;V · Bangalore
+      <p class="print-url"></p>
+    </div>
+  </footer>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'base',
+      themeVariables: {
+        primaryColor: '#eef2f6',
+        primaryTextColor: '#0f172a',
+        primaryBorderColor: '#1e3a5f',
+        lineColor: '#475569',
+        secondaryColor: '#ffffff',
+        tertiaryColor: '#eef2f6'
+      }
+    });
+  </script>
+  <script src="/site.js" defer></script>
+</body>
+</html>
