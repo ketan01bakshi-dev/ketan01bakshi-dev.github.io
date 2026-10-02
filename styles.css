@@ -364,6 +364,7 @@ section h3 {
 .dot-ollama { background: var(--rt-ollama); }
 .dot-rule { background: var(--rt-rule); }
 .dot-hil { background: var(--rt-hil); }
+.dot-human { background: var(--rt-ollama); }
 
 .table-filter-hint {
   font-size: 0.85rem;

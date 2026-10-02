@@ -2,11 +2,11 @@
   "use strict";
 
   var STAGE_MAP = {
-    design: ["Parse", "Design"],
-    derive: ["Functional", "FuSa"],
+    model: ["Model"],
+    derive: ["Derive"],
+    gate: ["Gate"],
     execute: ["Execute"],
-    observe: ["Observe"],
-    closeloop: ["Agent"],
+    closeloop: ["RCA"],
   };
 
   function initScrollSpy() {
@@ -53,6 +53,7 @@
 
   function runtimeKind(text) {
     var t = (text || "").toLowerCase();
+    if (t.indexOf("human") !== -1) return "human";
     if (t.indexOf("hil") !== -1 && t.indexOf("python") === -1) return "hil";
     if (t.indexOf("ollama") !== -1) return "ollama";
     if (t.indexOf("rule") !== -1 || t.indexOf("vs code") !== -1) return "rule";

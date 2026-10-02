@@ -56,109 +56,106 @@
       <h2><span class="sec-num">01 /</span> <span class="sec-title">ML Ops for automotive V&amp;V</span></h2>
       <p class="section-lead">
         <strong>Daimler Truck DTICI — Modular Systems Integration Lab</strong> ·
-        e-Mobility HIL (e-torque, charging, BMS, ACC/AEB) ·
-        <span class="mono">DOORS NG</span> · <span class="mono">SCALEXIO</span> ·
-        ECU Test / Python · in-house CAN Analyzer
+        POC on the e-mobility <span class="mono">dSPACE SCALEXIO</span> rig, used by the team today ·
+        first function: e-Torque reaction to the ACC acceleration request ·
+        Python orchestrator → <span class="mono">ECU-TEST</span> → XIL API
       </p>
 
       <ol class="pipeline-strip" aria-label="Pipeline stages">
         <li>
-          <button type="button" class="stage-btn" data-stage="design" aria-pressed="false">
-            <span class="step-num">1</span><span class="step-label">Design</span><span class="step-desc">Diagrams &amp; specs</span>
+          <button type="button" class="stage-btn" data-stage="model" aria-pressed="false">
+            <span class="step-num">1</span><span class="step-label">Model</span><span class="step-desc">LLM drafts test basis</span>
           </button>
         </li>
         <li>
           <button type="button" class="stage-btn" data-stage="derive" aria-pressed="false">
-            <span class="step-num">2</span><span class="step-label">Derive</span><span class="step-desc">Functional + FuSa</span>
+            <span class="step-num">2</span><span class="step-label">Derive</span><span class="step-desc">Code: ISTQB + ISO 26262-4</span>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="stage-btn" data-stage="gate" aria-pressed="false">
+            <span class="step-num">3</span><span class="step-label">Gate</span><span class="step-desc">Human sign-off</span>
           </button>
         </li>
         <li>
           <button type="button" class="stage-btn" data-stage="execute" aria-pressed="false">
-            <span class="step-num">3</span><span class="step-label">Execute</span><span class="step-desc">SCALEXIO / ECU Test</span>
-          </button>
-        </li>
-        <li>
-          <button type="button" class="stage-btn" data-stage="observe" aria-pressed="false">
-            <span class="step-num">4</span><span class="step-label">Observe</span><span class="step-desc">CAN Analyzer</span>
+            <span class="step-num">4</span><span class="step-label">Execute</span><span class="step-desc">ECU-TEST → SCALEXIO</span>
           </button>
         </li>
         <li>
           <button type="button" class="stage-btn" data-stage="closeloop" aria-pressed="false">
-            <span class="step-num">5</span><span class="step-label">Close-loop</span><span class="step-desc">Agent compare + RCA</span>
+            <span class="step-num">5</span><span class="step-label">Close-loop</span><span class="step-desc">RCA + RAG</span>
           </button>
         </li>
       </ol>
 
       <details class="code-snippet-wrap">
-        <summary>View sample JSON test specification (Output from Design step)</summary>
+        <summary>View a sample derived test case (boundary value analysis)</summary>
         <div class="code-block-container">
           <pre><code class="language-json">{
   "req_id": "SYS_REQ_001",
-  "test_objective": "Verify ACC engages only when speed > 30 km/h",
-  "signals_under_test": ["V_Veh_Speed", "St_ACC_Engage"],
+  "technique": "BVA",
+  "test_objective": "ACC engages only when vehicle speed > 30 km/h",
+  "signals_under_test": ["V_Veh_Speed", "ACC_Engage_Req", "St_ACC_Engage"],
   "preconditions": ["System is ON", "No active DTCs"],
   "steps": [
-    "Set V_Veh_Speed = 25 km/h",
-    "Trigger ACC_Engage_Req",
-    "Verify St_ACC_Engage == INACTIVE",
-    "Set V_Veh_Speed = 35 km/h",
-    "Trigger ACC_Engage_Req",
-    "Verify St_ACC_Engage == ACTIVE"
-  ],
-  "expected_result": "ACC state transitions to ACTIVE only above threshold"
+    "Set V_Veh_Speed = 30.00 km/h",
+    "Set ACC_Engage_Req = 1",
+    "Expect St_ACC_Engage == INACTIVE",
+    "Set V_Veh_Speed = 30.01 km/h",
+    "Set ACC_Engage_Req = 1",
+    "Expect St_ACC_Engage == ACTIVE"
+  ]
 }</code></pre>
         </div>
-        <p class="code-note">Note: Concept implementation showing LLM schema enforcement</p>
+        <p class="code-note">Illustrative, synthetic example. Code derives the steps and expected states from the validated test-basis model; the LLM never writes an expected result.</p>
       </details>
 
       <ul class="ops-chips" aria-label="ML Ops properties">
-        <li>Versioned artifacts</li>
-        <li>Schema validation</li>
-        <li>Human sign-off gates</li>
-        <li>Audit logs</li>
+        <li>Validator before every run</li>
+        <li>Hash-bound human approvals</li>
+        <li>Runner decides verdicts</li>
+        <li>Data stays in a Daimler sandbox</li>
       </ul>
 
       <details class="flow-details">
         <summary>Detailed stage flow</summary>
         <ol class="compact">
-          <li><strong>Design</strong> — DOORS NG → GPT-4o integration diagrams (Python API) → rule-based real vs soft on SCALEXIO → GPT-4o-mini test specs (JSON schema)</li>
-          <li><strong>Functional derive</strong> — llama3.2 (Ollama) signal enumeration &amp; ISTQB EP/BVA → rule-based platform sanity → ECU pin faults → GPT-4o ECU Test scripts</li>
-          <li><strong>FuSa derive</strong> — rule-based ASIL promotion → GPT-4o HARA cases (human sign-off) → GPT-4o-mini bus/message fault expansion</li>
-          <li><strong>Execute &amp; observe</strong> — SCALEXIO / ECU Test → in-house CAN Analyzer decode (Python)</li>
-          <li><strong>Agentic close-loop</strong> — GPT-4o compare vs DOORS NG → nomic-embed-text RAG on JIRA/Confluence → GPT-4o RCA → GPT-4o-mini draft tickets (human approve)</li>
+          <li><strong>Model</strong> — the LLM (GPT-4o / GPT-4o mini) drafts only a test-basis model from the requirement text: conditions, transitions, "otherwise" rules, declared assumptions. A validator checks it against the DBC and the requirement and returns every error in one repair round.</li>
+          <li><strong>Derive</strong> — code derives the tests: ISTQB techniques (equivalence partitions, boundary values, decision tables, state transitions, scenarios), ISO 26262-4 integration-test methods per ASIL, and a derivation ladder from signal enumerations to pin faults to bus, message and signal level.</li>
+          <li><strong>Gate</strong> — a human signs off the HARA lock and the script review; each approval is bound to the artifact's SHA-256 hash, and a rejection note travels with the redraft.</li>
+          <li><strong>Execute</strong> — a bench health gate runs before every campaign; the Python orchestrator then drives ECU-TEST, which talks to SCALEXIO over the XIL API (plant-model variables, restbus manipulation, fault insertion unit). Timing checks use windows sized from measured latency; the runner, not the LLM, decides pass or fail.</li>
+          <li><strong>Close-loop</strong> — each failure gets a deciding-input signature (new ticket vs comment on an open defect); RAG over Jira/Confluence history surfaces prior similar defects; the LLM drafts the RCA and ticket, claims the bench didn't observe are rejected, and a human approves before anything is published.</li>
         </ol>
       </details>
 
-      <h3>Models per stage</h3>
-      <ul class="runtime-legend" aria-label="Runtime legend">
-        <li><span class="dot dot-api" aria-hidden="true"></span> Python API</li>
-        <li><span class="dot dot-ollama" aria-hidden="true"></span> Ollama</li>
-        <li><span class="dot dot-rule" aria-hidden="true"></span> Rule / VS Code</li>
-        <li><span class="dot dot-hil" aria-hidden="true"></span> HIL</li>
+      <h3>Who does what</h3>
+      <ul class="runtime-legend" aria-label="Legend">
+        <li><span class="dot dot-api" aria-hidden="true"></span> LLM (GPT-4o / 4o mini, sandboxed)</li>
+        <li><span class="dot dot-rule" aria-hidden="true"></span> Code / rules</li>
+        <li><span class="dot dot-human" aria-hidden="true"></span> Human gate</li>
+        <li><span class="dot dot-hil" aria-hidden="true"></span> HIL rig</li>
       </ul>
       <p id="table-filter-hint" class="table-filter-hint" aria-live="polite"></p>
       <div class="table-wrap">
         <table class="data">
           <thead>
-            <tr><th>Stage</th><th>Step</th><th>Model</th><th>Runtime</th></tr>
+            <tr><th>Stage</th><th>Step</th><th>Done by</th><th>Runs on</th></tr>
           </thead>
           <tbody>
-            <tr data-stage="Parse"><td>Parse</td><td>ARXML / DBC / A2L / CAN</td><td class="mono">Rule / Python</td><td class="mono">VS Code</td></tr>
-            <tr data-stage="Design"><td>Design</td><td>Integration diagrams</td><td class="mono">GPT-4o</td><td class="mono">Python → Azure OpenAI</td></tr>
-            <tr data-stage="Design"><td>Design</td><td>Real vs soft</td><td class="mono">Rule-based</td><td class="mono">Python</td></tr>
-            <tr data-stage="Design"><td>Design</td><td>User story → test specs</td><td class="mono">GPT-4o-mini</td><td class="mono">Python API</td></tr>
-            <tr data-stage="Functional"><td>Functional</td><td>Signal enum / ISTQB</td><td class="mono">llama3.2</td><td class="mono">Ollama</td></tr>
-            <tr data-stage="Functional"><td>Functional</td><td>Platform sanity</td><td class="mono">Rule-based</td><td class="mono">Python</td></tr>
-            <tr data-stage="Functional"><td>Functional</td><td>ECU Test scripts</td><td class="mono">GPT-4o</td><td class="mono">Python API</td></tr>
-            <tr data-stage="FuSa"><td>FuSa</td><td>ASIL from DOORS</td><td class="mono">Rule-based</td><td class="mono">Python</td></tr>
-            <tr data-stage="FuSa"><td>FuSa</td><td>HARA → cases</td><td class="mono">GPT-4o + human</td><td class="mono">Python API</td></tr>
-            <tr data-stage="FuSa"><td>FuSa</td><td>Bus/message faults</td><td class="mono">GPT-4o-mini</td><td class="mono">Python API</td></tr>
-            <tr data-stage="Execute"><td>Execute</td><td>SCALEXIO / ECU Test</td><td class="mono">No model</td><td class="mono">HIL</td></tr>
-            <tr data-stage="Observe"><td>Observe</td><td>CAN Analyzer</td><td class="mono">Python; GPT-4o-mini</td><td class="mono">VS Code / Python API</td></tr>
-            <tr data-stage="Agent"><td>Agent</td><td>Compare vs requirements</td><td class="mono">GPT-4o</td><td class="mono">Python API</td></tr>
-            <tr data-stage="Agent"><td>Agent</td><td>JIRA/Confluence RAG</td><td class="mono">nomic-embed-text</td><td class="mono">Ollama</td></tr>
-            <tr data-stage="Agent"><td>Agent</td><td>Root-cause ranking</td><td class="mono">GPT-4o + tools</td><td class="mono">Python API</td></tr>
-            <tr data-stage="Agent"><td>Agent</td><td>Ticket/wiki drafts</td><td class="mono">GPT-4o-mini</td><td class="mono">Python API</td></tr>
+            <tr data-stage="Model"><td>Model</td><td>Requirement → test-basis model</td><td class="mono">GPT-4o / 4o mini</td><td class="mono">Sandboxed API</td></tr>
+            <tr data-stage="Model"><td>Model</td><td>Validate vs DBC + requirement (20+ rules)</td><td class="mono">Rules</td><td class="mono">Python</td></tr>
+            <tr data-stage="Derive"><td>Derive</td><td>ISTQB: EP, BVA, decision tables, state transitions</td><td class="mono">Rules</td><td class="mono">Python</td></tr>
+            <tr data-stage="Derive"><td>Derive</td><td>ISO 26262-4 methods per ASIL</td><td class="mono">Rules</td><td class="mono">Python</td></tr>
+            <tr data-stage="Derive"><td>Derive</td><td>Ladder: enum → pin → bus → message → signal</td><td class="mono">Rules</td><td class="mono">Python</td></tr>
+            <tr data-stage="Gate"><td>Gate</td><td>HARA lock + script review (SHA-256 bound)</td><td class="mono">Engineer</td><td class="mono">Human gate</td></tr>
+            <tr data-stage="Execute"><td>Execute</td><td>Bench health gate</td><td class="mono">Rules</td><td class="mono">Python</td></tr>
+            <tr data-stage="Execute"><td>Execute</td><td>Campaign: restbus, FIU, plant model</td><td class="mono">No model</td><td class="mono">ECU-TEST → XIL → HIL</td></tr>
+            <tr data-stage="Execute"><td>Execute</td><td>Verdicts (latency-sized timing windows)</td><td class="mono">Runner</td><td class="mono">Python</td></tr>
+            <tr data-stage="RCA"><td>RCA</td><td>Deciding-input signature → ticket vs comment</td><td class="mono">Rules</td><td class="mono">Python</td></tr>
+            <tr data-stage="RCA"><td>RCA</td><td>RAG over Jira/Confluence history</td><td class="mono">Embeddings + GPT-4o</td><td class="mono">Sandboxed API</td></tr>
+            <tr data-stage="RCA"><td>RCA</td><td>RCA + ticket drafts (fact-checked vs bench)</td><td class="mono">GPT-4o / 4o mini</td><td class="mono">Sandboxed API</td></tr>
+            <tr data-stage="Gate"><td>Gate</td><td>Publish approval before Jira/Confluence</td><td class="mono">Engineer</td><td class="mono">Human gate</td></tr>
           </tbody>
         </table>
       </div>
@@ -167,32 +164,33 @@
       <div class="mermaid-wrap">
         <div class="mermaid">
           graph TD
-            A[DOORS NG Requirements] -->|Python API + GPT-4o| B[Integration Diagrams]
-            B -->|Rule-based| C[Real vs Soft on SCALEXIO]
-            C -->|Python API + GPT-4o-mini| D[JSON Test Specs]
-            D -->|Ollama + llama3.2| E[Signal Enum &amp; ISTQB]
-            E -->|GPT-4o| F[ECU Test Scripts]
-            F -->|Execute| G[HIL / SCALEXIO]
-            G -->|CAN Analyzer| H[Observed Logs]
-            H -->|GPT-4o| I[Agent Compare]
-            I -->|Ollama RAG| J[JIRA / Confluence Context]
-            J -->|GPT-4o + tools| K[Root Cause Analysis]
-            K -->|GPT-4o-mini| L[Drafts: Human Approval]
+            A[Requirements + DBC] -->|GPT-4o / 4o mini| B[Test-basis model]
+            B -->|Validator rules| C[Validated model]
+            C -->|Code: ISTQB + ISO 26262-4| D[Test cases + scripts]
+            D -->|Human: HARA lock + script review| E[Approved campaign]
+            E -->|Bench health gate| F[ECU-TEST]
+            F -->|XIL API| G[SCALEXIO rig]
+            G -->|Runner verdicts| H[Results]
+            H -->|Deciding-input signature| I[Failure signature]
+            I -->|RAG: Jira / Confluence| J[Prior similar defects]
+            J -->|GPT-4o, fact-checked| K[RCA + ticket drafts]
+            K -->|Human: publish approval| L[Jira / Confluence]
         </div>
       </div>
-      
+
       <div class="pipeline-steps">
         <ol>
-          <li>Python orchestrator in VS Code writes stage artifacts to <code>campaign/00…11/</code> folders</li>
-          <li>High-reasoning steps (diagrams, HARA, compare, RCA) via OpenAI-compatible API from Python; bulk ISTQB + embeddings via Ollama</li>
-          <li>Human gates: after diagrams, after HARA lock, after ECU Test scripts, before JIRA/Confluence publish</li>
-          <li>LLMs never invent signal IDs or ASIL levels — only DOORS, ARXML/DBC, and the CAN Analyzer ground truth</li>
+          <li>One Python orchestrator generates and gates the tests and drives execution through ECU-TEST, which also reports the results</li>
+          <li>The LLM drafts a model and the RCA text; code derives every test and the runner decides every verdict</li>
+          <li>Human gates: HARA lock, script review, publish approval, each bound to the artifact's hash</li>
+          <li>GPT-4o, the RAG and its embeddings run inside a sandboxed Daimler environment, set up with Daimler IT; data never leaves the company</li>
         </ol>
       </div>
 
       <p class="footnote">
         Same ML Ops pattern (ingest → structured model → human sign-off → artifact) shipped in production outside automotive
         (Aarogya One Connect, <a href="https://github.com/ketan01bakshi-dev/Healthcare-Secure">Healthcare-Secure</a> — transferable pipeline discipline, not a career pivot).
+        A personal rebuild of this pipeline on synthetic data is listed under <a href="/#projects">Projects</a>.
       </p>
     </section>
 
