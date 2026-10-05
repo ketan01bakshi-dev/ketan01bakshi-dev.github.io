@@ -1,0 +1,3043 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Technical notes · Ketan Bakshi</title><meta name="description" content="Notes on HIL, CAN, UDS, E2E, ISO 26262 and test methods.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=Source+Sans+3:wght@400;600;700&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="extra.css"></head>
+<body class="page-home"><header class="site"><div class="wrap">
+<span class="brand">Ketan Bakshi</span>
+<p class="tagline">Test Architect · System Integration · HIL Verification · ML Ops for V&amp;V</p>
+<div class="contact-row">
+<a href="mailto:ketan01bakshi@gmail.com">ketan01bakshi@gmail.com</a><span>Bangalore, India</span>
+<a href="https://linkedin.com/in/ketan-bakshi-b9380950" rel="noopener">LinkedIn</a>
+<a href="https://github.com/ketan01bakshi-dev" rel="noopener">GitHub</a>
+</div></div></header>
+<nav class="page-nav" aria-label="Site"><div class="wrap nav-inner"><a href="index.html">Home</a><a href="mlops.html">HIL ML Ops</a><a href="projects.html">Projects</a><a href="stories.html">Stories</a><a href="knowledge.html" class=is-active aria-current=page>Technical notes</a><a href="approach.html">How I work</a></div></nav>
+<main class="wrap"><section class="hero hero-compact"><h1>Technical notes</h1>
+<p class="lede">My working notes on HIL test benches, automotive networks, functional safety and how I test. Written in plain language; where a section describes my own method, it says so.</p></section>
+<ol class="toc"><li><a href="#k1">Concept glossary</a></li><li><a href="#k4">Protocol primer — deep dive + comparative table</a></li><li><a href="#k6">HIL internal signal chain</a></li><li><a href="#k8">UDS / ISO 14229-1 diagnostic services reference</a></li><li><a href="#k20">Creating and sending a CAN message</a></li><li><a href="#k29">AUTOSAR E2E Profile 2 vs Profile 5</a></li><li><a href="#k15">HIL test-failure triage: my method as one framework (&quot;TRIAGE&quot;)</a></li><li><a href="#k16">Designing a test automation framework: my approach (&quot;process before code&quot;)</a></li><li><a href="#k17">Test-case derivation standard: requirements → integration diagram → test ladder</a></li><li><a href="#k18">CI on a HIL bench: how a physical bench becomes a &quot;sandbox&quot;</a></li><li><a href="#k14">Legacy dSPACE PHS: architecture + recommissioning a transported rig</a></li><li><a href="#k21">Ground loop on an e-mobility HIL</a></li><li><a href="#k23">Equipotential bonding: why every metal part is tied together</a></li><li><a href="#k26">dSPACE DS2680 I/O Unit: ECU power control, switching, I/O, fault insertion</a></li><li><a href="#k30">Testing a supplied virtual ECU you can&#x27;t see inside (black-box vECU, FMU intake, oracles, mutation testing)</a></li><li><a href="#k31">A lean SiL → PiL → HiL ladder, and what only a real bus teaches</a></li><li><a href="#k22">EV charging communication: CCS, MCS, DIN 70121, ISO 15118</a></li><li><a href="#k24">Automotive radar (77 GHz FMCW) + radar vs ultrasonic</a></li><li><a href="#k25">Automotive camera: how it works, fog, failure modes, validation</a></li><li><a href="#k27">SAE J3016 levels of driving automation + the ODD</a></li><li><a href="#k28">The AV safety layer: doer/checker, fault detection, reaction ladder, standards</a></li></ol><article class="note" id="k1"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">Concept glossary</span></h2><table>
+<thead>
+<tr>
+<th>Term</th>
+<th>What it actually means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>HIL (Hardware-in-the-Loop)</strong></td>
+<td>Take the <em>real</em> electronic control unit (ECU) and connect it to a machine that pretends to be the rest of the vehicle (simulated engine, sensors, road, weather) in real time. The ECU thinks it's in a real vehicle; you can inject any condition (sensor failure, extreme temperature, GNSS loss) without touching a real vehicle.</td>
+</tr>
+<tr>
+<td><strong>SIL (Software-in-the-Loop)</strong></td>
+<td>Same idea as HIL, but nothing is real hardware — both controller and environment are software models on a regular computer, usually earlier in development before physical hardware exists.</td>
+</tr>
+<tr>
+<td><strong>GNSS / RTK</strong></td>
+<td>GNSS (e.g. GPS) gives rough position, usually accurate to a few metres. RTK (Real-Time Kinematic) uses a fixed reference station's corrections to improve that to centimetres.</td>
+</tr>
+<tr>
+<td><strong>Radar</strong></td>
+<td>Sends radio waves, measures what bounces back — distance, speed, rough shape. Works in fog/dust/rain where cameras struggle, since radio waves aren't blocked by small particles the way light is.</td>
+</tr>
+<tr>
+<td><strong>Camera-based perception</strong></td>
+<td>Image-processing/AI models on video frames to detect and classify objects. Strong at classification, weak in fog/dust/low light — hence pairing with radar and GNSS ("sensor fusion": each sensor's weakness covered by another's strength).</td>
+</tr>
+<tr>
+<td><strong>IMU (Inertial Measurement Unit)</strong></td>
+<td>Measures acceleration and rotation rate. Tracks vehicle motion moment-to-moment when GNSS is briefly lost — "dead reckoning."</td>
+</tr>
+<tr>
+<td><strong>Edge Compute</strong></td>
+<td>An on-vehicle computer (not cloud) that processes sensor data and decides locally in real time, since there's no time to round-trip to a data centre while moving.</td>
+</tr>
+<tr>
+<td><strong>CAN bus (Controller Area Network)</strong></td>
+<td>The standard in-vehicle wiring/protocol for ECUs to talk to each other.</td>
+</tr>
+<tr>
+<td><strong>ASIL / Safe State / Fault Reaction Time (ISO 26262)</strong></td>
+<td>ASIL = risk classification for how dangerous a failure would be. Safe state = the defined, non-dangerous fallback condition. Fault reaction time = the max allowed time from detecting a problem to reaching safe state. Safety systems are built around "what happens, precisely and within what time, when it doesn't work" — not just "does it work."</td>
+</tr>
+<tr>
+<td><strong>ASPICE</strong></td>
+<td>Formal maturity model for automotive software/systems engineering — names specific process areas (e.g. SYS.4 System Integration Test, SYS.5 System Qualification Test, SWE.5/SWE.6 software integration/qualification in PAM 3.1; older 2.5 names were ENG.x, see the version map) and requires specific documented work products for each.</td>
+</tr>
+<tr>
+<td><strong>ISTQB test-design techniques</strong></td>
+<td>Formal vocabulary for maximum test coverage with minimum redundancy — <strong>equivalence partitioning</strong> (test one representative per group of similar inputs) and <strong>boundary value analysis</strong> (test at the edges of valid ranges, where bugs cluster).</td>
+</tr>
+<tr>
+<td><strong>SAT / UAT (Site/User Acceptance Test)</strong></td>
+<td>The final test run <em>with the customer watching/signing off</em> — proves the system meets what was promised, vs. internal testing which only satisfies your own team.</td>
+</tr>
+<tr>
+<td><strong>RCA (Root-Cause Analysis)</strong></td>
+<td>Tracing a failure to its actual underlying cause (not just the symptom) so the fix prevents recurrence.</td>
+</tr>
+<tr>
+<td><strong>Traceability matrix</strong></td>
+<td>A table/link chain: requirement → test(s) that verify it → result/evidence. Proves nothing was missed.</td>
+</tr>
+<tr>
+<td><strong>Real-time system / latency</strong></td>
+<td>Correctness depends on <em>when</em> the output arrives, not just what it is. A correct answer that's too late has still failed.</td>
+</tr>
+<tr>
+<td><strong>Ground loop</strong></td>
+<td>Two or more ground paths at slightly different potentials, so current flows through ground/return conductors that should carry none. It shifts reference voltages and injects noise. In a HIL lab, high drive or load currents can make it bad enough to disturb the real-time system and I/O: the root cause of my <a href="stories.html#STAR-02">STAR-02</a> (model reloads on high-torque steps). On my 5-cabinet SCALEXIO in 2025 it hit whenever a high-torque step demanded high current; dSPACE and the central hardware team fixed it around one common ground point. Typical fixes: single-point (star) grounding, isolating equipment grounds, and checking lab earthing with the facilities/hardware team.</td>
+</tr>
+<tr>
+<td><strong>Welded contactor</strong></td>
+<td>An HV contactor whose contacts have fused shut, usually from arcing when switching under load or inrush current. It can no longer disconnect the traction battery, so HV stays live on the vehicle side even when commanded open: a serious safety fault. Detected by the missing "click" when commanded, by pre-charge/voltage checks across the contactor, or by the BMS's weld-detection diagnostic. I caught these by ear during Tata bring-up .</td>
+</tr>
+<tr>
+<td><strong>HV isolation &amp; chassis bonding</strong></td>
+<td>An EV's HV battery is <strong>floating</strong>: neither HV+ nor HV− is connected to the chassis (an IT-style system), so one insulation fault causes no shock current. What <strong>is</strong> connected to the chassis: <strong>(1) equipotential bonding</strong>: every HV component's metal housing (battery pack, inverter, motor, charger, DC-DC, compressor) is strapped to the chassis at low resistance (UNECE R100: &lt; 0.1 Ω), so all touchable metal sits at one potential; <strong>(2)</strong> the <strong>insulation monitoring device</strong> (in the BMS) measures resistance HV+→chassis and HV−→chassis and warns or blocks contactor closing below the limit (R100: ≥ 100 Ω/V DC, ≥ 500 Ω/V AC); <strong>(3)</strong> <strong>Y-capacitors</strong> HV→chassis for EMC filtering. The 12 V system <em>does</em> use the chassis as its return. Why: a first fault is harmless and detected; a person can only be hurt if two faults happen, and bonding means even then they can't bridge two different potentials. my <a href="stories.html#STAR-12">STAR-12</a> safety step. Analogies + fault walk-through: <a href="knowledge.html#k23">see notes</a>.</td>
+</tr>
+<tr>
+<td><strong>A-part number / variant management</strong></td>
+<td>At Daimler, the <strong>A-part number</strong> identifies a specific hardware or software variant; it's how variants are managed. Reading each ECU's A-part numbers tells you exactly which hardware and software variant a bench is running, which is what <a href="stories.html#STAR-21">STAR-21</a>'s nightly run recorded. Elsewhere this is usually just called the ECU's hardware/software part number or variant coding.</td>
+</tr>
+<tr>
+<td><strong>12 V vs 24 V electrical systems</strong></td>
+<td>The low-voltage supply that powers a vehicle's ECUs, lights and sensors. Passenger cars and most North American heavy trucks (e.g. Freightliner) use <strong>12 V</strong>; European heavy trucks (e.g. Mercedes-Benz Actros) and most off-highway machines, including mining haul trucks, use <strong>24 V</strong>. An ECU is designed for one of them, so a HIL's power-supply settings, power-up behaviour and under/over-voltage tests differ between the two. ISO 16750-2 defines the supply ranges and electrical tests for each separately. Bridge : in <a href="stories.html#STAR-21">STAR-21</a> the US benches' ECUs ran at 12 V and the German benches' at 24 V, so their framework scripts differed.</td>
+</tr>
+<tr>
+<td><strong>MUX (multiplexed) switches</strong></td>
+<td>Switches that send their state as <strong>data</strong> to a controller, instead of each switch having its own wire to an ECU input pin. <strong>Two kinds:</strong> (1) <strong>Bus-multiplexed:</strong> the switch panel has a small chip, usually a LIN slave (sometimes CAN), and reports every switch in one message; the controller can send back commands such as indicator LEDs and backlight dimming. (2) <strong>Resistor-coded:</strong> several switches or positions share one wire, each giving a different resistance, and the ECU reads the voltage to tell which is pressed (common for steering-wheel buttons and multi-position light switches). <strong>Truck examples:</strong> a dashboard panel of rocker switches (work lamps, beacon, fog lamps, differential lock, PTO) sent as one LIN frame to the body controller; a door switch pack (window up/down, mirror adjust, lock) sent to the door control module; the steering-column stalks (indicators, wipers, high beam) read by the steering column module and passed on over CAN. <strong>Why:</strong> far fewer wires (less weight and cost), switch faults show up in diagnostics, and software decides what each switch does, so a customer-specific switch can be added in a spare panel slot without a new harness. <strong>On a HIL:</strong> use the real panels (a person or a relay presses them) or let the restbus send the message the panel would send, so tests can "press" switches automatically. <strong>Test chain:</strong> switch pressed → message on the bus → body ECU decides → output drives the load (e.g. a lamp on the light wagon) → the HIL measures the lamp current. <a href="stories.html#STAR-01">STAR-01</a>'s third cabinet has real MUX switches and switch panels . Whether they used LIN or CAN isn't confirmed.</td>
+</tr>
+<tr>
+<td><strong>FPGA board (in a HIL)</strong></td>
+<td>A board whose logic runs as hardware, so a model can step in <strong>microseconds</strong> instead of a processor model's usual ~1 ms. E-mobility HILs use it to simulate the <strong>inverter and e-motor</strong>: the inverter's PWM switches tens of thousands of times a second, too fast for the processor model, and the ECU expects motor currents and position signals that react within microseconds. dSPACE offers FPGA boards for SCALEXIO, with ready-made electric-motor models. my ₹7–8 Cr SCALEXIO has FPGA cards that simulate inverter-motor operation .</td>
+</tr>
+<tr>
+<td><strong>Anti-jerk calibration</strong></td>
+<td>A drivability calibration: tuning how motor torque ramps in and out (tip-in, tip-out, forward/reverse changes) so driveline backlash and shaft wind-up don't cause a shunt or oscillation the driver feels. In an EV the motor's instant torque makes this more noticeable than in a petrol car. I calibrated creep through anti-jerk on Tigor EV prototypes .</td>
+</tr>
+<tr>
+<td><strong>Brake-resistor chopper</strong></td>
+<td>In an electric vehicle, braking energy normally goes back into the battery (regeneration). When the battery can't take it (full, or cold), a chopper, a fast power-electronic switch, sends the excess into a brake resistor, where it becomes heat, so electric braking keeps working. The chopper's ECU controls that switching. my SCALEXIO HV cabinet has two brake-resistor choppers .</td>
+</tr>
+<tr>
+<td><strong>Charging ECU</strong></td>
+<td>An ECU that manages charging: it talks to the charging station and controls the vehicle's charging hardware. On my SCALEXIO the charging ECUs are <strong>three EV charge controllers</strong>; the two DC charge boxes and the megawatt charging unit they control are hardware, not ECUs . the DCCBs and the MWCU are hardware only; they're in the rig's count of 18 units, not among the 15 ECUs with logic.</td>
+</tr>
+<tr>
+<td><strong>DICV (Daimler India Commercial Vehicles)</strong></td>
+<td>The name . <a href="stories.html#STAR-01">STAR-01</a>'s restored rig serves DICV today . Daimler Truck's Indian subsidiary: it builds BharatBenz trucks and buses (plus export trucks) at Oragadam, near Chennai. Not the same company as my employer, Daimler Truck Innovation Center India in Bangalore. One of the two reasons for <a href="stories.html#STAR-01">STAR-01</a>'s 2022 restoration: DICV needed HILs but couldn't spend a lot, and management was looking for low-cost solutions .</td>
+</tr>
+<tr>
+<td><strong>EVCC (Electric Vehicle Communication Controller)</strong></td>
+<td>The vehicle's side of the charging conversation; my team calls it the <strong>electric vehicle charge controller</strong>. It talks to the charger's <strong>SECC (Supply Equipment Communication Controller)</strong> under DIN 70121 or ISO 15118, and commands the vehicle's charging hardware. Three on my SCALEXIO, controlling the DC charge boxes and the megawatt charging unit (over CAN FD), one EVCC each for the left CCS2 port, the right CCS2 port and the MCS port; the CCS2 ports' EVCCs handle AC sessions too .</td>
+</tr>
+<tr>
+<td><strong>HIL box</strong></td>
+<td>How units that are high voltage on the vehicle sit on my HIL: at low voltage, as HIL boxes; that includes the inverters (PTIs), brake-resistor choppers (BRCs), DC charge boxes and the megawatt charging unit. Typically the real control electronics without the HV power stage, which is simulated instead (for an inverter, on an FPGA board).</td>
+</tr>
+<tr>
+<td><strong>DS2680 I/O Unit (dSPACE)</strong></td>
+<td>A SCALEXIO "MultiCompact" I/O unit: one box with most of the I/O a powertrain or vehicle-dynamics ECU needs, plus ECU power-supply control, six power switches and a failure insertion unit, on IOCNET. On my SCALEXIO it controls the ECU supply voltage .</td>
+</tr>
+<tr>
+<td><strong>DS5366 Smart Charging Interface (dSPACE)</strong></td>
+<td>An isolated interface between the HIL simulator and the charging ECU. It connects to the simulator over <strong>CAN FD</strong>, with USB and Ethernet for protocol tracing and logging, and ships with a Simulink model, ControlDesk layouts and a DBC. It simulates a charging station (or a vehicle) under ISO 15118, DIN 70121, CHAdeMO and GB/T, for Type 1, Type 2, CCS1, CCS2, GB/T and CHAdeMO plugs, including communication errors and Plug &amp; Charge (TLS, certificates). <strong>DS5366_ADVANCED</strong> is the successor: an updated controller with stronger TLS crypto, and from dSPACE Release 2025-A the only one getting new ISO 15118-20 features; the original reaches end of life on 1 June 2028. my SCALEXIO has the <strong>DS5366 Advanced</strong>, with megawatt charging built in, and I configured it on the HIL with the dSPACE India and dSPACE Germany teams and the German HIL team, as a group exercise .</td>
+</tr>
+<tr>
+<td><strong>MCS (Megawatt Charging System)</strong></td>
+<td>CharIN's DC charging standard for heavy-duty trucks and buses: up to <strong>3.75 MW</strong> (3,000 A at 1,250 V DC), liquid-cooled connector (IEC 63379). The truck's EVCC talks to the charger's SECC over 10BASE-T1S single-pair automotive Ethernet with ISO 15118-20, instead of CCS's powerline. On my rig the <strong>megawatt charging unit</strong> is the vehicle's MCS charging hardware: like a DC charge box, but for megawatt charging, no logic of its own, and it talks to its EVCC over <strong>CAN FD</strong> . * the Ethernet link is EVCC ↔ charger, not the megawatt unit's.*</td>
+</tr>
+<tr>
+<td><strong>DC charge box</strong></td>
+<td>Charging <strong>hardware with no logic of its own</strong>, controlled by an EV charge controller; the megawatt charging unit plays the same role for megawatt charging. Typically it holds the DC charging path between the inlet and the battery: contactors, fuses, voltage and current measurement. Two on my SCALEXIO, one per CCS2 port, left and right ; listed as <strong>DCCB</strong> among the rig's 18 units, hardware only .</td>
+</tr>
+<tr>
+<td><strong>CCS (Combined Charging System)</strong></td>
+<td>The plug and protocol standard for charging cars and trucks in Europe and North America. "Combined" because one inlet takes both AC and DC. Messages run as powerline communication over the control-pilot wire.</td>
+</tr>
+<tr>
+<td><strong>CCS2 (CCS Combo 2)</strong></td>
+<td>The CCS plug used in Europe and India: the Type 2 AC plug with two DC pins added below it. (CCS1 is the North American version, built on the Type 1 plug.) my SCALEXIO has a left and a right CCS2 port, each with its own EV charge controller and DC charge box; the trucks charge on AC through them too .</td>
+</tr>
+<tr>
+<td><strong>TLS (Transport Layer Security)</strong></td>
+<td>The protocol that encrypts and authenticates a network connection: the "S" in HTTPS. ISO 15118 uses it to protect the charging messages and to carry the certificates for Plug &amp; Charge; DIN 70121 has none.</td>
+</tr>
+<tr>
+<td><strong>10BASE-T1S</strong></td>
+<td>Single-pair automotive Ethernet at 10 Mbit/s (IEEE 802.3cg) that can run as a multidrop bus like CAN, with PLCA taking turns so timing is deterministic. MCS uses it for the charger conversation.</td>
+</tr>
+<tr>
+<td><strong>Half duplex / full duplex</strong></td>
+<td><strong>Half duplex:</strong> data flows either way, but one direction at a time, like a walkie-talkie. CAN, CAN FD, LIN, 2-wire RS-485 and 10BASE-T1S are half duplex: all nodes share one pair, so they need a rule for who talks next. <strong>Full duplex:</strong> both ways at once, like a phone call: RS-232, 100BASE-T1, switched Ethernet.</td>
+</tr>
+<tr>
+<td><strong>Type 2 (IEC 62196-2)</strong></td>
+<td>The standard AC charging plug in Europe, also used in India: three phases, neutral, earth, control pilot and proximity pilot. CCS2 is Type 2 plus two DC pins.</td>
+</tr>
+<tr>
+<td><strong>SECC (Supply Equipment Communication Controller)</strong></td>
+<td>The charging station's communication controller, the counterpart of the vehicle's EVCC. (The station itself is the EVSE: Electric Vehicle Supply Equipment.)</td>
+</tr>
+<tr>
+<td><strong>EAM (Extended Activity Module) ECU</strong></td>
+<td>The ECU that <strong>supports special lighting or other body requirements from a particular customer</strong>: the customer-specific extras on top of the BCM's standard body functions. It also handles drive authorization; a programmable node (ECU) in commercial heavy-duty trucks. On my restored PHS rig it sits in the body-domain rack and was the first ECU brought up (<a href="stories.html#STAR-01">STAR-01</a>). <em>Drive authorization</em> is the immobiliser function: the vehicle starts and drives only after the key or driver ID is verified (Mercedes-Benz's term is "drive authorization system"). <em>Background on the name, not your truck:</em> in Mercedes-Benz service notes for the 2000–05 ML-Class, the Extended Activity Module is a second module next to the main body controller (the All Activity Module), linked over CAN; "extended" means it adds functions to the main body controller, which fits my description.</td>
+</tr>
+</tbody>
+</table></article><article class="note" id="k4"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">Protocol primer — deep dive + comparative table</span></h2><h3>Layman explanations</h3>
+<p><strong>UART (Universal Asynchronous Receiver/Transmitter)</strong> — Two wires (TX/RX) + ground. No clock wire; both sides agree a baud rate in advance and time their own bits against it ("asynchronous"). Chip-level voltages (0–3.3V/0–5V, "TTL"). Point-to-point only, no addressing.</p>
+<p><strong>RS-232</strong> — Same async framing as UART, but standardized to much larger voltages (~±3V to ±15V) so signals survive longer/noisier cables. Needs a converter IC (classically MAX232) between chip-level UART and cable-level RS-232. Historically DB9/DB25 connectors. Point-to-point, up to ~15 m practical range.</p>
+<p><strong>NMEA 0183</strong> — Not a wire protocol, a <em>message format</em> carried over serial. Comma-separated ASCII "sentences" starting with <code>$</code> (e.g. <code>$GPGGA,...</code>), checksum at the end. Historically 4800 baud; modern receivers usually faster and configurable. One-directional (receiver talks, consumer listens).</p>
+<p><strong>CAN (Controller Area Network)</strong> — Two wires (CAN-H/CAN-L), differential signal (noise-resistant). Every node sees every message; no addressing, just message IDs. Simultaneous transmission resolves by ID priority (lower ID wins — "arbitration"), no traffic cop needed. Classic CAN: up to 1 Mbit/s, 8 bytes/message.</p>
+<p><strong>CAN-FD (Flexible Data-Rate)</strong> — Same wires/arbitration as CAN, but after arbitration wins, switches to a faster data phase (commonly 5–8 Mbit/s) and up to 64 bytes/message.</p>
+<p><strong>Automotive Ethernet</strong> — Point-to-point, packet-switched, single twisted pair (100BASE-T1 = 100 Mbit/s, 1000BASE-T1 = 1 Gbit/s) vs. regular Ethernet's 4 pairs. Needs switches for &gt;2 devices; addressable traffic. Far higher bandwidth than CAN — carries video, dense sensor fusion, diagnostics. ~15 m per segment, extended via switches.</p>
+<p><strong>SPI (Serial Peripheral Interface)</strong> — Synchronous (shared clock, SCLK), full-duplex, 4 wires (SCLK/MOSI/MISO/CS per device). Fast (tens of MHz). Board-level distance only.</p>
+<p><strong>I2C (Inter-Integrated Circuit)</strong> — Synchronous, 2 wires total (SCL clock + shared SDA data), many devices via 7-bit addressing (up to 128). Slower than SPI (100/400 kHz typical). Board-level distance.</p>
+<h3>Other protocols referenced elsewhere in this bank</h3>
+<table>
+<thead>
+<tr>
+<th>Protocol</th>
+<th>Explanation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>LIN (Local Interconnect Network)</strong></td>
+<td>Cheap single-wire cousin of CAN, up to 19.2 kbit/s, one master + several slaves. Non-safety-critical, low-priority signals.</td>
+</tr>
+<tr>
+<td><strong>GMSL / FPD-Link (SerDes)</strong></td>
+<td>Proprietary high-speed point-to-point video links (Analog Devices/Maxim GMSL, TI FPD-Link) — raw uncompressed camera video + power + control down a single coax/twisted pair over several metres ("Power-over-Coax").</td>
+</tr>
+<tr>
+<td><strong>RTCM3</strong></td>
+<td>Binary message format for GNSS correction data.</td>
+</tr>
+<tr>
+<td><strong>NTRIP</strong></td>
+<td>"Networked Transport of RTCM via Internet Protocol" — RTCM3 streamed over cellular/Wi-Fi from a base-station network to a rover.</td>
+</tr>
+<tr>
+<td><strong>XCP / CCP</strong></td>
+<td>XCP = Universal Measurement and Calibration Protocol; CCP = its older, CAN-only predecessor (CAN Calibration Protocol). Both let tools (INCA, CANape) read/write ECU calibration parameters and watch internal variables live without stopping/reflashing the ECU. XCP runs over CAN, CAN-FD, Ethernet, SPI, or serial; CCP was CAN-only.</td>
+</tr>
+</tbody>
+</table>
+<h3>Comparative table</h3>
+<table>
+<thead>
+<tr>
+<th>Protocol</th>
+<th>Sync/async</th>
+<th>Wires/topology</th>
+<th>Typical speed</th>
+<th>Typical range</th>
+<th>Multi-device?</th>
+<th>Common role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>UART</td>
+<td>Async</td>
+<td>2 wires+GND, point-to-point</td>
+<td>~9,600–115,200+ bps</td>
+<td>Board/chip level</td>
+<td>No</td>
+<td>Underlies NMEA, often RS-232</td>
+</tr>
+<tr>
+<td>RS-232</td>
+<td>Async</td>
+<td>2–3 wires, point-to-point</td>
+<td>Up to ~115,200 bps</td>
+<td>~15 m</td>
+<td>No</td>
+<td>Config ports, debug consoles</td>
+</tr>
+<tr>
+<td>NMEA 0183</td>
+<td>Format over serial</td>
+<td>Same as carrier</td>
+<td>Same as carrier</td>
+<td>Same as carrier</td>
+<td>No</td>
+<td>GNSS/RTK reporting</td>
+</tr>
+<tr>
+<td>LIN</td>
+<td>Single-master clock</td>
+<td>1 wire</td>
+<td>Up to 19.2 kbit/s</td>
+<td>Tens of metres</td>
+<td>Yes (master+slaves)</td>
+<td>Simple HMI elements</td>
+</tr>
+<tr>
+<td>CAN</td>
+<td>Sync</td>
+<td>2 wires, differential, broadcast</td>
+<td>Up to 1 Mbit/s</td>
+<td>Tens of m at full speed</td>
+<td>Yes (ID-based)</td>
+<td>Vehicle backbone, radar object lists</td>
+</tr>
+<tr>
+<td>CAN-FD</td>
+<td>Sync</td>
+<td>Same 2 wires</td>
+<td>Arbitration at CAN speed, data ~5–8 Mbit/s</td>
+<td>Similar to CAN</td>
+<td>Yes</td>
+<td>Higher-bandwidth radar/compute output</td>
+</tr>
+<tr>
+<td>Automotive Ethernet</td>
+<td>Sync, packet</td>
+<td>1 twisted pair + switches</td>
+<td>100 Mbit/s–1 Gbit/s+</td>
+<td>~15 m/segment</td>
+<td>Yes (switched)</td>
+<td>Video, compute backbone, diagnostics</td>
+</tr>
+<tr>
+<td>GMSL/FPD-Link</td>
+<td>Sync, proprietary</td>
+<td>1 coax/pair, point-to-point</td>
+<td>Multi-Gbit/s</td>
+<td>Several metres</td>
+<td>No</td>
+<td>Camera → compute video link</td>
+</tr>
+<tr>
+<td>SPI</td>
+<td>Sync</td>
+<td>4 wires</td>
+<td>Tens of MHz</td>
+<td>Centimetres</td>
+<td>1 master, multi-CS</td>
+<td>Chip-to-chip (e.g. IMU)</td>
+</tr>
+<tr>
+<td>I2C</td>
+<td>Sync</td>
+<td>2 wires, shared bus</td>
+<td>100–400 kHz</td>
+<td>Board-level</td>
+<td>Yes (addressed)</td>
+<td>Low-speed sensor chips</td>
+</tr>
+<tr>
+<td>RTCM3+NTRIP</td>
+<td>Format+delivery</td>
+<td>Cellular/Wi-Fi then serial/CAN/Ethernet</td>
+<td>Depends on carrier</td>
+<td>Effectively unlimited</td>
+<td>N/A</td>
+<td>GNSS/RTK corrections</td>
+</tr>
+<tr>
+<td>XCP/CCP</td>
+<td>Layered protocol</td>
+<td>Runs over CAN/CAN-FD/Ethernet/SPI/serial</td>
+<td>Depends on transport</td>
+<td>Depends on transport</td>
+<td>Depends on transport</td>
+<td>ECU calibration/measurement</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Spoken summary:</strong> <em>"UART/RS-232 are simple, old, point-to-point serial links. CAN/CAN-FD are the vehicle's shared, priority-arbitrated backbone. SPI/I2C are short-distance chip-to-chip links — SPI for speed, I2C for many devices on few wires. Ethernet is what you reach for once there's too much data for CAN. NMEA/RTCM3/GMSL/XCP aren't competing wire protocols — they're message formats or jobs riding on top of those links."</em></p></article><article class="note" id="k6"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">HIL internal signal chain</span></h2><pre><code>ECU
+ ↕ (wiring harness)
+Wiring Harness
+ ↕ (Hypertac plug connector)
+Hypertac Plug Connector
+ ↕ (Hypertac socket)
+Hypertac Socket
+ ↕
+FIU / BOB
+ ↕ (ADC/DAC)
+IO Cards ⇄ Load Cards (FPGA)
+ ↕ (ADC/DAC)
+SC Cards
+ ↕
+Backplane Interconnect ⇄ (also bused to IO Cards / Load Cards)
+ ↕
+Processor (digital) → IOCNET Router
+</code></pre>
+<p><strong>Arrow convention:</strong> black = down = stimulus path (processor's simulation → real ECU); red = up = feedback path (ECU's real electrical response → simulation); green = ADC/DAC conversion taps at IO Cards and SC Cards. This down/up pairing at every layer is the closed loop that makes HIL work.</p>
+<table>
+<thead>
+<tr>
+<th>Block</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>ECU</strong></td>
+<td>The one genuinely real hardware component — everything below exists to make it believe it's in a real vehicle.</td>
+</tr>
+<tr>
+<td><strong>Wiring Harness</strong></td>
+<td>The real cable bundle connecting the ECU's connector to the lab setup.</td>
+</tr>
+<tr>
+<td><strong>Hypertac Plug/Socket</strong></td>
+<td>High-density, gold-plated, spring-pin ("pogo pin") connectors built for very frequent connect/disconnect cycles without wear — what a constantly-replugged lab bench needs.</td>
+</tr>
+<tr>
+<td><strong>FIU / BOB</strong></td>
+<td><strong>FIU = Failure Insertion Unit</strong> — switching matrix that deliberately breaks/shorts-to-ground/shorts-to-battery a signal on command, for wiring-fault simulation without cutting a wire. <strong>BOB = Break-Out Box</strong> — every harness pin broken out to an accessible test point.</td>
+</tr>
+<tr>
+<td><strong>IO Cards (ADC/DAC)</strong></td>
+<td><strong>ADC</strong> reads real analog ECU signals into digital values; <strong>DAC</strong> turns simulation output back into a real analog voltage the ECU reads as if from a real sensor.</td>
+</tr>
+<tr>
+<td><strong>Load Cards (FPGA)</strong></td>
+<td>Realistic electrical <strong>loads</strong> so a simulated motor/solenoid "feels" electrically real to the ECU, not just logically correct. FPGA-based for hardware-speed response.</td>
+</tr>
+<tr>
+<td><strong>SC Cards (ADC/DAC)</strong></td>
+<td>Most likely <strong>Signal Conditioning cards</strong> (scale/filter/amplify/protect signals between IO layer and the rest) — confirm this exact expansion against lab notes if it comes up; transcribed faithfully, not guessed at dSPACE's own internal naming.</td>
+</tr>
+<tr>
+<td><strong>Backplane Interconnect</strong></td>
+<td>The internal bus all cards (IO, Load, SC, Processor) plug into — power + high-speed data paths, why they're not separately wired point-to-point.</td>
+</tr>
+<tr>
+<td><strong>Processor (dig)</strong></td>
+<td>The real-time digital core — where the plant model (simulated vehicle/environment/physics) actually runs.</td>
+</tr>
+<tr>
+<td><strong>IOCNET Router</strong></td>
+<td>The high-speed network connecting the processor unit to distributed IO units/cabinets — dSPACE's real-time IO network in the SCALEXIO ecosystem, distinct from the vehicle-facing CAN/Ethernet in .</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Why this matters generally:</strong> this is the physical answer to "how does a sensor's electrical signal get from the real world into a simulation and back" — the mechanical foundation underneath calibration discussion. Fault injection happens at the FIU. The sensor's raw-value ↔ physical-value calibration parameter lives at the ADC/DAC conversion (IO/SC Cards). Load Cards are why a simulated actuator feels electrically real, not just logically correct.</p></article><article class="note" id="k8"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">UDS / ISO 14229-1 diagnostic services reference</span></h2><h3>Service ID (SID) reference</h3>
+<table>
+<thead>
+<tr>
+<th>SID</th>
+<th>Service name</th>
+<th>Sub-function</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0x10</td>
+<td>Diagnostic Session Control</td>
+<td>0x01</td>
+<td>Default Session (DTC, DID)</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>0x02</td>
+<td>Programming Session (flashing)</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>0x03</td>
+<td>Extended Session (IO, Routine Control, config data)</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>0x04</td>
+<td>Safety System Diagnostic Session — safety-critical subsystems (airbags, ADAS radar/camera, steering); typically stationary/test-bench</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>0x40–0x5F</td>
+<td>OEM-specific sessions (End-of-Line modes, sensor-alignment sessions)</td>
+</tr>
+<tr>
+<td>0x11</td>
+<td>ECU Reset</td>
+<td>0x01</td>
+<td>Hard Reset</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>0x02</td>
+<td>Key Off/On Reset</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>0x03</td>
+<td>Soft Reset</td>
+</tr>
+<tr>
+<td>0x14</td>
+<td>Clear Diagnostic Information</td>
+<td>—</td>
+<td>Clears stored DTCs (groupOfDTC parameter, not a sub-function)</td>
+</tr>
+<tr>
+<td>0x19</td>
+<td>Read DTC Information</td>
+<td>0x01</td>
+<td>Report Number of DTCs by Status Mask</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>0x02</td>
+<td>Report DTCs by Status Mask</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>0x04</td>
+<td>Report Snapshot Record by DTC Number</td>
+</tr>
+<tr>
+<td>0x22</td>
+<td>Read Data By Identifier (DID)</td>
+<td>—</td>
+<td>Identifier-based, no sub-function byte</td>
+</tr>
+<tr>
+<td>0x27</td>
+<td>Security Access</td>
+<td>0x01/0x02</td>
+<td>Request Seed / Send Key (Level 1)</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>0x03/0x04</td>
+<td>Request Seed / Send Key (Level 2)</td>
+</tr>
+<tr>
+<td>0x2E</td>
+<td><strong>Write Data By Identifier (WDBI)</strong></td>
+<td>—</td>
+<td>Writes configuration/calibration data via a DID</td>
+</tr>
+<tr>
+<td>0x2F</td>
+<td>Input/Output Control By Identifier</td>
+<td>0x00</td>
+<td>Return Control to ECU</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>0x03</td>
+<td>Short Term Adjustment (Override Actuator)</td>
+</tr>
+<tr>
+<td>0x31</td>
+<td>Routine Control</td>
+<td>0x01</td>
+<td>Start Routine</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>0x02</td>
+<td>Stop Routine</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>0x03</td>
+<td>Request Routine Results</td>
+</tr>
+<tr>
+<td>0x34/0x35/0x36/0x37</td>
+<td>Request Download/Upload/Transfer Data/Request Transfer Exit</td>
+<td>—</td>
+<td>Flashing/reprogramming family</td>
+</tr>
+<tr>
+<td>0x3E</td>
+<td>TesterPresent</td>
+<td>0x00</td>
+<td>Keep session active, response required</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td><strong>0x80</strong></td>
+<td>Keep session active, response suppressed (see correction 4)</td>
+</tr>
+</tbody>
+</table>
+<h3>Corrections applied to original notes</h3>
+<ol>
+<li><strong>0x12 is not a Service ID</strong> — it's the NRC <code>subFunctionNotSupported</code>, sent after <code>0x7F</code>.</li>
+<li><strong>0x33 is not a Service ID</strong> — it's the NRC <code>securityAccessDenied</code>.</li>
+<li><strong>0x2E is "Write Data By Identifier," not "Routine Execution"</strong> — routine execution is 0x31.</li>
+<li><strong>TesterPresent's suppress value is 0x80, not 0x03</strong> — <code>zeroSubFunction</code> (0x00) with bit 7 (<code>suppressPosRspMsgIndicationBit</code>) set = 0x80; no 0x03 variant exists.</li>
+</ol>
+<h3>Response formats</h3>
+<ul>
+<li><strong>Positive:</strong> <code>Response SID = Request SID + 0x40</code>, then echoed sub-function + returned data.</li>
+<li><strong>Negative:</strong> <code>0x7F</code> → echoed request SID → one NRC:</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>NRC</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0x11</td>
+<td>serviceNotSupported</td>
+</tr>
+<tr>
+<td>0x12</td>
+<td>subFunctionNotSupported</td>
+</tr>
+<tr>
+<td>0x13</td>
+<td>incorrectMessageLengthOrInvalidFormat</td>
+</tr>
+<tr>
+<td>0x22</td>
+<td>conditionsNotCorrect</td>
+</tr>
+<tr>
+<td>0x24</td>
+<td>requestSequenceError</td>
+</tr>
+<tr>
+<td>0x31</td>
+<td>requestOutOfRange</td>
+</tr>
+<tr>
+<td>0x33</td>
+<td>securityAccessDenied</td>
+</tr>
+<tr>
+<td>0x35</td>
+<td>invalidKey</td>
+</tr>
+<tr>
+<td>0x36</td>
+<td>exceedNumberOfAttempts</td>
+</tr>
+<tr>
+<td>0x78</td>
+<td>requestCorrectlyReceived-ResponsePending (RCR-RP)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>DCM</strong> = Diagnostic Communication Manager — the (typically AUTOSAR) ECU module handling UDS requests/responses.</p></article><article class="note" id="k20"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">Creating and sending a CAN message</span></h2><h3>What you're building</h3>
+<p>A CAN frame is an <strong>ID</strong> (11-bit standard or 29-bit extended; the lower ID wins arbitration), a <strong>DLC</strong> (0–8 data bytes on classic CAN) and the <strong>data</strong>. <strong>Signals</strong> are packed into the data bytes at a start bit and length. A <strong>factor and offset</strong> convert the physical value to the raw value, and the <strong>byte order</strong> is Intel (little-endian) or Motorola (big-endian). All of this lives in the <strong>communication matrix</strong>: a DBC file for CAN (ARXML in AUTOSAR projects, LDF for LIN). The matrix also sets the <strong>send rule</strong>: cyclic (e.g. every 100 ms), on change, or on request.</p>
+<p><strong>Worked example (the frame in the Python test below):</strong> ID 0x321, 8 bytes, every 100 ms. <code>WorkLampReq</code> is bit 0; <code>DimLevel</code> is byte 1, with a factor of 0.5 %. Setting <code>WorkLampReq = 1</code> and <code>DimLevel = 75 %</code> gives raw 75 / 0.5 = 150 = 0x96, so with <code>AliveCounter = 3</code> in the last byte the data is <code>01 96 00 00 00 00 00 03</code>.</p>
+<h3>Before anything goes on the wire (every method)</h3>
+<ul>
+<li>A CAN channel and a bus with <strong>120 Ω at each end</strong> (60 Ω between CAN_H and CAN_L), and <strong>at least one other active node</strong> to acknowledge: an ECU, a second channel or an analyser .</li>
+<li>The <strong>same bit rate</strong> as the bus, e.g. 250 or 500 kbit/s.</li>
+<li>Never send an ID that another node on a live network already sends: two senders of one ID corrupt each other's frames.</li>
+</ul>
+<h3>A. On a dSPACE SCALEXIO: ConfigurationDesk Bus Manager → ControlDesk</h3>
+<ol>
+<li><strong>Import the communication matrix</strong> into the Bus Manager (DBC, LDF, FIBEX or AUTOSAR files).</li>
+<li><strong>Build a bus configuration:</strong> drag the frame, or its whole sending ECU, into the bus configuration as a <strong>simulated ECU</strong>, so the HIL transmits it (restbus).</li>
+<li><strong>Set how it's sent:</strong> the cycle time (from the DBC or overridden), which signals get <strong>model access</strong> (driven from Simulink) and which you'll set by hand. If the frame is E2E-protected, add the counter and CRC handling .</li>
+<li><strong>Map it to hardware:</strong> assign the bus configuration's CAN channel to a physical CAN channel of the SCALEXIO I/O, and check the bit rate.</li>
+<li><strong>Build</strong> the real-time application and <strong>download</strong> it to the SCALEXIO.</li>
+<li><strong>In ControlDesk, open the Bus Navigator,</strong> find the frame and set its signal values. It goes out on the physical bus at its cycle time; the Bus Navigator's monitor shows the traffic.</li>
+<li><strong>Verify</strong> on a second node: an analyser (CANalyzer, PCAN-View) or the HIL's own second channel.</li>
+</ol>
+<p><em>PHS-era equivalent (DS1006, as on <a href="stories.html#STAR-01">STAR-01</a>'s rig):</em> the <strong>RTI CAN MultiMessage Blockset</strong> in Simulink. Import the DBC into the block, build with RTI, then set the signals in ControlDesk.</p>
+<h3>B. Vector CANalyzer / CANoe: a quick manual send</h3>
+<ol>
+<li>Set the channel's bit rate in the hardware configuration and load the DBC.</li>
+<li>Add an <strong>Interactive Generator (IG)</strong> block, add the message from the DBC, and set its signal values and cycle time.</li>
+<li>Start the measurement and watch the Trace window. For scripted sends, CAPL's <code>output(msg)</code> (example in ).</li>
+</ol>
+<h3>C. Python: python-can + cantools ( tested)</h3>
+<p>Two bus objects on the same virtual channel behave like two HIL channels wired together, so this needs no hardware. Output of the run: <code>single frame: 0x321 01 96 00 00 00 00 00 03</code> and <code>periodic: 6 frames in 0.55 s at 100 ms</code>.</p>
+<pre><code class="language-python">&quot;&quot;&quot;Create a CAN message from a DBC definition and send it on a CAN bus.
+
+Runs on python-can's virtual bus (no hardware): two bus objects on the same
+channel act like two HIL CAN channels wired together (a loopback).
+For a real bus, swap the virtual Bus lines for a hardware interface, e.g.
+    can.Bus(interface=&quot;pcan&quot;, channel=&quot;PCAN_USBBUS1&quot;, bitrate=500000)
+    can.Bus(interface=&quot;vector&quot;, channel=0, bitrate=500000)
+&quot;&quot;&quot;
+import time
+
+import can
+import cantools
+
+# 1. The definition: one frame, ID 0x321 (801), 8 bytes, sent by the HIL every 100 ms.
+DBC = &quot;&quot;&quot;VERSION &quot;&quot;
+
+NS_ :
+
+BS_:
+
+BU_: HIL EAM
+
+BO_ 801 LightRequest: 8 HIL
+ SG_ WorkLampReq : 0|1@1+ (1,0) [0|1] &quot;&quot; EAM
+ SG_ BeaconReq : 1|1@1+ (1,0) [0|1] &quot;&quot; EAM
+ SG_ DimLevel : 8|8@1+ (0.5,0) [0|100] &quot;%&quot; EAM
+ SG_ AliveCounter : 56|4@1+ (1,0) [0|15] &quot;&quot; EAM
+
+BA_DEF_ BO_ &quot;GenMsgCycleTime&quot; INT 0 10000;
+BA_DEF_DEF_ &quot;GenMsgCycleTime&quot; 0;
+BA_ &quot;GenMsgCycleTime&quot; BO_ 801 100;
+&quot;&quot;&quot;
+
+db = cantools.database.load_string(DBC, database_format=&quot;dbc&quot;)
+light_req = db.get_message_by_name(&quot;LightRequest&quot;)
+
+# 2. Encode physical values into the 8 data bytes (factor/offset and bit positions from the DBC).
+payload = light_req.encode({&quot;WorkLampReq&quot;: 1, &quot;BeaconReq&quot;: 0, &quot;DimLevel&quot;: 75.0, &quot;AliveCounter&quot;: 3})
+assert payload == bytes([0x01, 0x96, 0, 0, 0, 0, 0, 0x03]), payload.hex(&quot; &quot;) # 75 % / 0.5 = 150 = 0x96
+
+# 3. Wrap it in a CAN frame.
+frame = can.Message(arbitration_id=light_req.frame_id, data=payload, is_extended_id=light_req.is_extended_frame)
+
+with can.Bus(interface=&quot;virtual&quot;, channel=&quot;hil&quot;) as tx, can.Bus(interface=&quot;virtual&quot;, channel=&quot;hil&quot;) as rx:
+    # 4a. Send once; the second &quot;channel&quot; must receive it byte for byte.
+    tx.send(frame)
+    got = rx.recv(timeout=1.0)
+    assert got is not None, &quot;nothing received&quot;
+    assert got.arbitration_id == 0x321 and got.dlc == 8 and bytes(got.data) == payload
+    print(&quot;single frame:&quot;, hex(got.arbitration_id), got.data.hex(&quot; &quot;), light_req.decode(got.data))
+
+    # 4b. Send cyclically at the DBC's cycle time, as an ECU or restbus would.
+    period_s = light_req.cycle_time / 1000
+    task = tx.send_periodic(frame, period=period_s)
+    time.sleep(0.55)
+    task.stop
+    received = 0
+    while rx.recv(timeout=0.05) is not None:
+        received += 1
+    assert 4 &lt;= received &lt;= 7, received # ~0.55 s at 100 ms
+    print(f&quot;periodic: {received} frames in 0.55 s at {light_req.cycle_time} ms&quot;)
+</code></pre>
+<p>Run it with the project's environment: <code>.venv\Scripts\python.exe can_send_demo.py</code> (python-can and cantools are installed there, not in the system Python).</p>
+<h3>CAN FD: the same steps, two changes ( tested)</h3>
+<p>A CAN FD frame carries <strong>up to 64 data bytes</strong>, and with the <strong>bit rate switch (BRS)</strong> its data phase runs faster than the arbitration phase. The charging links on my SCALEXIO are CAN FD .</p>
+<ul>
+<li><strong>The definition</strong> marks the frame as CAN FD (DBC attributes, or ARXML).</li>
+<li><strong>The channel</strong> needs two bit rates, arbitration (e.g. 500 kbit/s) and data (e.g. 2 Mbit/s), and FD-capable transceivers. dSPACE's Bus Manager configures CAN FD the same way as CAN.</li>
+<li><strong>In python-can</strong>, the frame gets <code>is_fd=True</code> (and <code>bitrate_switch=True</code>); 0x3a0 DLC 64 BRS True`:</li>
+</ul>
+<pre><code class="language-python">import can
+
+# CAN FD: up to 64 data bytes, and bitrate_switch=True sends the data phase at the faster rate.
+frame = can.Message(arbitration_id=0x3A0, is_extended_id=False, is_fd=True, bitrate_switch=True, data=bytes(range(64)))
+
+with can.Bus(interface=&quot;virtual&quot;, channel=&quot;fd&quot;, protocol=can.CanProtocol.CAN_FD) as tx, \
+     can.Bus(interface=&quot;virtual&quot;, channel=&quot;fd&quot;, protocol=can.CanProtocol.CAN_FD) as rx:
+    tx.send(frame)
+    got = rx.recv(timeout=1.0)
+    assert got is not None and got.is_fd and got.bitrate_switch
+    assert got.dlc == 64 and bytes(got.data) == bytes(range(64))
+    print(&quot;CAN FD frame:&quot;, hex(got.arbitration_id), &quot;DLC&quot;, got.dlc, &quot;BRS&quot;, got.bitrate_switch)
+</code></pre>
+<h3>Verify (every method)</h3>
+<p>The ID and DLC, every data byte, the cycle time (from the timestamps), no error frames, and both error counters at 0. Decode the bytes with the DBC to check the physical values.</p>
+<p><em>"Start from the communication matrix: the DBC gives the ID, the length, the cycle time and where each signal sits. On a SCALEXIO, import it into the Bus Manager, put the frame in a bus configuration as a simulated ECU, map it to a physical CAN channel, build, and set the signal values from ControlDesk's Bus Navigator. Then check it on a second node: ID, bytes, cycle time, no error frames."</em></p></article><article class="note" id="k29"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">AUTOSAR E2E Profile 2 vs Profile 5</span></h2><p><strong>What every profile does:</strong> the sender adds a <strong>CRC</strong> and a <strong>counter</strong>. The <strong>data ID</strong>, unique to each message, goes into the CRC but is <strong>never sent</strong>. The receiver recomputes the CRC with the data ID it expects, then checks how far the counter stepped.</p>
+<table>
+<thead>
+<tr>
+<th>Fault</th>
+<th>Caught by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Corrupted data</td>
+<td>CRC</td>
+</tr>
+<tr>
+<td>Repeated / frozen message</td>
+<td>The counter didn't change</td>
+</tr>
+<tr>
+<td>Lost messages</td>
+<td>The counter jumped more than the allowed step</td>
+</tr>
+<tr>
+<td>Wrong order</td>
+<td>The counter went backwards</td>
+</tr>
+<tr>
+<td><strong>Masquerading</strong> (the right bytes, but the wrong message or sender)</td>
+<td>The data ID inside the CRC</td>
+</tr>
+<tr>
+<td>The message stopped</td>
+<td><strong>Not in the frame</strong>: the receiver's timeout</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><strong>Profile 2</strong></th>
+<th><strong>Profile 5</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>For</td>
+<td><strong>Classic CAN</strong> (≤ 8 bytes)</td>
+<td>Larger frames, typically <strong>CAN FD</strong></td>
+</tr>
+<tr>
+<td>CRC</td>
+<td>8-bit (CRC-8, polynomial 0x2F, "CRC8H2F")</td>
+<td>16-bit (CRC-16 CCITT-FALSE: polynomial 0x1021, init 0xFFFF)</td>
+</tr>
+<tr>
+<td>Counter</td>
+<td>4-bit (0–15)</td>
+<td>8-bit (0–255)</td>
+</tr>
+<tr>
+<td>Data ID</td>
+<td><strong>A list of 16</strong>; the counter value picks which one goes into the CRC</td>
+<td><strong>One 16-bit</strong> data ID</td>
+</tr>
+<tr>
+<td>Overhead</td>
+<td>2 bytes</td>
+<td>3 bytes</td>
+</tr>
+</tbody>
+</table>
+<p><strong>What the differences mean:</strong>
+- A 16-bit CRC misses far fewer corruptions, which matters because a CAN FD frame carries more data that can be corrupted.
+- A 4-bit counter wraps after 16 frames, so losing exactly 16 frames can go unseen.
+- Profile 2 fits into 2 bytes because a classic CAN frame only has 8.</p>
+<p><strong>Receiver status → state machine:</strong> each check returns a status: OK, NO_NEW_DATA, WRONG_CRC, REPEATED, OK_SOME_LOST or WRONG_SEQUENCE. A <strong>windowed state machine</strong> (NODATA → INIT → VALID ⇄ INVALID) judges the last N results, so scattered errors add up. A "3 bad in a row" count never sees errors separated by good frames; the POC's mutation tests catch exactly that bug. It's the same debounce trade-off as in <a href="knowledge.html#k28">see notes</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>What it actually means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>E2E protection</td>
+<td>AUTOSAR end-to-end protection: a CRC, counter and data ID added by the sender and checked by the receiver. Corruption, repetition, loss, reordering and masquerading are all detected end to end, across every gateway in between</td>
+</tr>
+<tr>
+<td>Data ID</td>
+<td>A number unique to each protected message, included in the CRC but never transmitted. A correct-looking frame from the wrong message fails the CRC</td>
+</tr>
+<tr>
+<td>E2E state machine</td>
+<td>A windowed judgement of the last N check results (valid / invalid): one bad frame doesn't trip it, but scattered errors do</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>that you configured E2E in the restbus or the ARXML (it was testing);</li>
+<li>byte offsets, or which ECUs used which profile (not recorded).</li>
+</ul></article><article class="note" id="k15"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">HIL test-failure triage: my method as one framework (&quot;TRIAGE&quot;)</span></h2><p><strong>Why this section exists:</strong> "How do you triage a failed HIL test?" (question bank ****) is a standard HIL question, and root-cause analysis sits in most validation JDs. I described three approaches: hypothesis buckets checked via test intent and a last-known-good delta; DTC → traces → signal origin; escalation to the component owner. They're one funnel, not three alternatives.</p>
+<p><strong>Transcription notes:</strong> "RESPA" in the dictation is read as <strong>restbus</strong> (the HIL simulating the ECUs that aren't on the bench; question bank B-03). "Configuration disk" = dSPACE <strong>ConfigurationDesk</strong>. Correct these if wrong.</p>
+<h3>Three suspects, ruled out in this order</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Suspect</th>
+<th>What it covers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>Test methodology</strong></td>
+<td>The test case, scenario, stimulus and expected result: is the test itself right?</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>Test environment</strong></td>
+<td>HIL hardware and firmware (FIU, signal-conditioning and I/O cards, harness, pins), the ConfigurationDesk I/O setup, the restbus, and the plant model (its I/O layer and its behaviour)</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>ECU / DUT</strong></td>
+<td>Parameterisation, hardware, software</td>
+</tr>
+</tbody>
+</table>
+<h3>The flow: T-R-I-A-G-E</h3>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>What you do</th>
+<th>Clears / points at</th>
+<th>Exit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>T: Test intent</strong></td>
+<td>Pin down the exact test case and step that failed. What was the tester trying to prove? Does the test, as run, check what the requirement expects?</td>
+<td>Suspect 1 (methodology)</td>
+<td>Test wrong → fix the test and re-run. Test right → methodology ruled out</td>
+</tr>
+<tr>
+<td><strong>R: Regression delta</strong></td>
+<td>Compare now with the <strong>last known-good</strong> run. Did anything change in HIL hardware or firmware, the plant model, or ECU hardware, software or parameterisation?</td>
+<td>Suspects 2 and 3, fast</td>
+<td>Any change → revert it to the older version and re-test. No change → go evidence-first (I → A → G)</td>
+</tr>
+<tr>
+<td><strong>I: Interrogate the DTC</strong></td>
+<td>Read the DTC, then its engineering troubleshooting guide for the known causes</td>
+<td>Often a direct lead: the ECU itself, the CAN bus, or something else</td>
+<td>Tells you which <strong>function</strong> raised it</td>
+</tr>
+<tr>
+<td><strong>A: Analyse the traces</strong></td>
+<td>Open that function's <strong>integration diagram</strong>, pull every connected signal into the trace, and find the signal that goes wrong. The <em>first</em> one to deviate is the lead; later deviations are usually knock-on effects</td>
+<td>Narrows it to one signal</td>
+<td>The failing signal</td>
+</tr>
+<tr>
+<td><strong>G: Go to its origin</strong></td>
+<td>Is the failing signal restbus-simulated, or does it come from a real ECU on the bench? Then the decision tree below</td>
+<td>Suspect 2 vs 3</td>
+<td>Root cause in the plant model, the I/O configuration, the harness or the in-path hardware; or the bench is cleared</td>
+</tr>
+<tr>
+<td><strong>E: Escalate</strong></td>
+<td>Still unexplained → take it to the <strong>component owner</strong> and troubleshoot together</td>
+<td>Suspect 3: likely an ECU bug</td>
+<td>Joint debug; defect raised with the evidence from T to G</td>
+</tr>
+</tbody>
+</table>
+<h3>Step G: the origin decision tree</h3>
+<pre><code>Failing signal (from step A)
+│
+├─ Restbus-simulated by the HIL?
+│ YES → the root cause is the plant model. Fix it there.
+│
+└─ NO: it comes from a real ECU on the bench
+      │
+      ├─ 1. What sits between the two ECUs? FIU, signal-conditioning card, any other
+      │ element in the path. Each is a place the signal can be altered
+      │ ( e.g. an FIU channel left in a fault state: question bank B-12).
+      │
+      ├─ 2. Are the signal's pins present in ConfigurationDesk AND physically connected to the ECU?
+      │ NO → hardware: make sure the ECU pins are actually wired to the HIL harness
+      │ ( if the pin is only missing from the ConfigurationDesk mapping, that's a config fix)
+      │ YES ↓
+      ├─ 3. Is the I/O modelled correctly inside the plant model (the Simulink I/O settings)?
+      │ NO → fix the I/O model
+      │ YES ↓
+      └─ 4. The plant model's behaviour for that function: analyse it and change what's wrong.
+              Still unexplained → step E.
+</code></pre>
+<h3>Suggested additions (not in my description; adopt or drop)</h3>
+<ol>
+<li><strong>Reproduce first</strong> ( the older answer began "re-run once"). A consistent failure → run TRIAGE. An intermittent one → note what the bench was doing at each failure. If it follows the <strong>load</strong> (high current) rather than a function, move power and grounding to the front of the environment suspect. <a href="stories.html#STAR-02">STAR-02</a> is the proof: the reloads only came on high-torque steps, the team knew it early, and still spent 2–3 months on software before the ground loop was found .</li>
+<li><strong>One change at a time in R</strong> ( older answer: "bisect builds"). If several things changed since the last known good, revert them one at a time, so you know which one it was.</li>
+<li><strong>Close the loop</strong> ( question bank C-01: "fix → prove → add a regression check"; standard defect-management practice). Log the root cause, and which suspect it was, in the defect register; add a regression check; make the fixed setup the new last-known-good baseline. <strong>I have done the baseline part</strong> : after an unrecorded parameter change locked the driving scenario, testers were told to put every HIL parameter change through the master parameter file, with the HIL operators' help, so R always has a record to compare against.</li>
+<li><strong>No DTC?</strong> Skip I. The failing test step (from T) already names the function, so go straight to its integration diagram (A).</li>
+</ol>
+<p><strong>90-sec version (~140 words):</strong> <em>"Three suspects, and I rule them out cheapest first: the test itself, the HIL environment, then the ECU. My shorthand is TRIAGE. Test intent: does the test case really check what the requirement asks? Regression: what changed since the last known-good run? HIL hardware or firmware, plant model, ECU software, hardware or parameters. If anything did, I revert it and retest. Interrogate the DTC and its troubleshooting guide: it often points straight at the ECU or the bus. Analyse traces: from the function's integration diagram, find the first signal that goes wrong. Go to its origin: if it's restbus-simulated, it's the plant model; if it comes from a real ECU, I walk the path: FIU, signal conditioning, ConfigurationDesk pins, harness, Simulink I/O, then plant-model behaviour. Only then do I escalate to the component owner, with the evidence, as a likely ECU bug."</em></p></article><article class="note" id="k16"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">Designing a test automation framework: my approach (&quot;process before code&quot;)</span></h2><p><strong>Why this section exists:</strong> "How do you design a test automation framework?" is question bank ***<em>. my answer gives the </em>order<em> of work; the earlier prep answer gives the </em>shape* of what gets built. Together they're one answer.</p>
+<h3>The approach, in order</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Step</th>
+<th>What it means</th>
+<th>Confidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>Understand the current process</strong></td>
+<td>How testing is actually done today, before changing anything</td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>Standardise it</strong></td>
+<td>Find the patterns in that process and turn them into guidelines, so everyone does it the same way. my real example: how integration diagrams are built from DOORS requirements, and a set order for deriving test cases from them</td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>Choose what to automate</strong></td>
+<td>Stable requirements, high-repeat regressions, safety-critical paths and release gates first. Exploratory, new-feature and bring-up work stays manual. Right coverage at the right level</td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>Build it in layers</strong></td>
+<td>Configuration (HW/SW variant matrix, environments) → shared libraries (stimulus, measurement, assertions, CAN/log parsers) → thin, data-driven tests → orchestration (Python + Jenkins: smoke / nightly / release) → reports tied to requirement IDs, with logs and artefacts for audits . my real build: tests on PROVEtec, orchestrated by Jenkins</td>
+<td>layers · bracketed details from prep</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>Use AI where it saves time</strong></td>
+<td>e.g. drafting test specs from requirements, first-pass result checks, surfacing similar past issues. The <a href="stories.html#STAR-03">STAR-03</a> POC does these, and its spec generation follows the same derivation standard as step 2</td>
+<td>approach · <a href="stories.html#STAR-03">STAR-03</a> is a POC</td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>Human gates at every critical gate</strong></td>
+<td>Review and approval on specs, verdicts and releases. AI drafts, people approve; never automatic regulatory sign-off (H-02, H-05)</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Each thin test in step 4</strong> ( G-01): preconditions (power, ignition, restbus) → stimulate → observe CAN/signals → assert → report. Runner: PROVEtec for the <a href="stories.html#STAR-06">STAR-06</a> tests; ECU-TEST and Python are also in your stack.</p>
+<p><strong>Proof: the whole approach, with a real example at every step :</strong>
+1. <strong>Standardised:</strong> how integration diagrams are built from DOORS requirements and how test cases are derived from them (<a href="stories.html#STAR-06">STAR-06</a>, <a href="knowledge.html#k17">see notes</a>).
+2. <strong>Automated:</strong> the derived tests were automated.
+4. <strong>AI-assisted, with human gates:</strong> the HIL ML Ops POC generates test specs using the same standard (<a href="stories.html#STAR-03">STAR-03</a>).</p>
+<p>Result along the way: per-function verification ~2 weeks → ~1 week across three EV programmes, with structured RCA (<a href="stories.html#STAR-06">STAR-06</a>).</p>
+<p><strong>90-sec version (~130 words):</strong> <em>"I start with the process, not the code. First, I understand how we test today. Then I look for the patterns and turn them into guidelines, so everyone does it the same way. Automating an unstandardised process just automates the chaos. Once it's standard, I automate it in layers: configuration, shared libraries, thin tests running on PROVEtec, Jenkins orchestration, and reports tied to requirement IDs. AI helps where it saves time, but every critical gate keeps a human review and approval. At Daimler, I standardised how we derived test cases from integration diagrams. The derived tests were automated, we reached 100% requirement coverage, and with structured root-cause analysis per-function verification went from about two weeks to one. My AI proof of concept now generates test specs using that same standard."</em></p>
+<p>**</p></article><article class="note" id="k17"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">Test-case derivation standard: requirements → integration diagram → test ladder</span></h2><p><strong>What this is:</strong> the concrete content of <a href="stories.html#STAR-06">STAR-06</a>'s "repeatable test-specification development frameworks", and the example behind step 2 ("standardise it") in <a href="knowledge.html#k16">see notes</a>. It answers "What exactly did you standardise?", "How do you derive test cases from requirements?", "How do you reach full coverage?" and "What fault-injection tests do you run?" (question bank , , , B-13).</p>
+<h3>The flow</h3>
+<p><code>DOORS requirements → system integration diagram (per function) → test cases, derived in a set order → automated → 100% requirement coverage, measured at sign-off ([STAR-07](stories.html#STAR-07))</code></p>
+<p><strong>The template it lived in : the Function Understanding Document (FUD).</strong> One per function. It restated the requirements as the information exchanged between ECUs, sensors and actuators, drawn as the integration diagram, with review gates and checklists. New engineers had to follow it strictly for their first 2–3 functions, and the framework itself kept evolving (<a href="stories.html#STAR-17">STAR-17</a>): e.g. the review checklist, grown to 40–50 items, was cut by the team to 10 non-negotiable ones, and the rest moved into the FUD template as guidance .</p>
+<p>The same standard now drives the HIL ML Ops POC's AI-generated test specs (<a href="stories.html#STAR-03">STAR-03</a>), with human approval: the "standardise first, then automate with AI" arc of <a href="knowledge.html#k16">see notes</a>.</p>
+<p><strong>The diagram is also the RCA map :</strong> with the integration diagram and the CAN traces in PROVEtec, find the problem signal and its origin (restbus or real ECU). If it's the real ECU, go one step back: why is that ECU producing that signal enumeration? That's the same path as <a href="knowledge.html#k15">see notes</a> origin tree, and it's why RCA got faster along with test cases and scripts (<a href="stories.html#STAR-06">STAR-06</a>'s 50%).</p>
+<h3>The derivation ladder</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Layer</th>
+<th>What the test cases cover</th>
+<th>What it means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>Signal enumerations</strong></td>
+<td>Every possible value of each enumerated signal</td>
+<td>An enumerated signal has a fixed list of named states. Testing every one means no defined state goes untested.</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>Pin manipulation</strong></td>
+<td>Open circuit and short circuit on each relevant ECU pin</td>
+<td>Electrical fault injection. On a HIL it's the FIU's job : break the line, or short it to ground or battery, on command. The ECU should detect the fault (DTC) and react safely.</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>FuSa: bus level</strong></td>
+<td>Bus-off conditions, error frames</td>
+<td><strong>Error frame:</strong> what a CAN node sends when it detects an error, so every node drops the corrupted frame. <strong>Bus-off:</strong> a controller with too many transmit errors takes itself off the bus (CAN fault confinement: transmit error counter above 255). The test: does the ECU notice the lost communication, set the right DTC, degrade safely and recover?</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>FuSa: message level</strong></td>
+<td>Sequence counters, CRC, message counters, message timeouts</td>
+<td>End-to-end (E2E) protection on safety-relevant messages. A <strong>CRC</strong> over the payload catches corrupted data; a <strong>sequence (alive) counter</strong> that steps every frame catches repeated, lost or stale frames; a <strong>timeout</strong> catches frames that stop arriving. Tests corrupt the CRC, freeze or skip the counter, or stop the message, and check the ECU rejects the data and reacts.</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>FuSa: signal level</strong></td>
+<td>ASIL-relevant signals, plus the CRC and sequence-counter signals in the messages that carry them</td>
+<td>Aims the E2E tests where the safety goals are: the signals with an ASIL rating, and the protection signals packed next to them in the same message.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>90-sec version (~135 words):</strong> <em>"At Daimler I standardised how we developed test specifications. Step one: turn the DOORS requirements into a system integration diagram for each function. Step two: derive test cases from that diagram in a set order. First, every value of every signal enumeration. Then pin manipulation: open circuit and short circuit on every relevant ECU pin. Then functional safety, at three levels. Bus level: bus-off and error frames. Message level: CRC, sequence and message counters, and message timeouts. Signal level: the ASIL-relevant signals, and the CRC and counter signals in the same messages. The derived tests were automated, and we reached 100% requirement coverage at sign-off. Together with structured root-cause analysis, that took per-function verification from about two weeks to one, across three EV programmes. My AI proof of concept now generates specs using the same standard."</em></p></article><article class="note" id="k18"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">CI on a HIL bench: how a physical bench becomes a &quot;sandbox&quot;</span></h2><p><strong>Why this section exists:</strong> question bank <strong>G-07</strong> ("Practical limits of CI on HIL?"), and my own question: CI runs in an isolated, throwaway sandbox, so how can a physical HIL bench be one?</p>
+<h3>The mismatch</h3>
+<table>
+<thead>
+<tr>
+<th>Cloud CI sandbox</th>
+<th>HIL bench</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Disposable: a fresh container per job, destroyed afterwards</td>
+<td>Physical and expensive: a handful of benches, shared by several teams</td>
+</tr>
+<tr>
+<td>Identical every time, because it's built from an image</td>
+<td><strong>Stateful:</strong> it remembers the flashed software, fault memory (DTCs), NVM, FIU relay positions and the loaded plant model</td>
+</tr>
+<tr>
+<td>Scales instantly: 50 jobs = 50 containers</td>
+<td>Doesn't scale: one pipeline per bench at a time</td>
+</tr>
+<tr>
+<td>Minutes per job</td>
+<td>A full regression can take hours</td>
+</tr>
+</tbody>
+</table>
+<h3>The answer: isolation in <em>time</em>, not in <em>space</em></h3>
+<p>You don't sandbox the bench. You give each run the bench to itself, and make every run start clean:</p>
+<ol>
+<li><strong>A CI agent on the bench PC.</strong> A Jenkins agent, GitHub Actions self-hosted runner or GitLab runner on the PC wired to the HIL. Labels (bench, platform, ECU variant) route each job to the right bench. <a href="stories.html#STAR-21">STAR-21</a>: one Jenkins agent on each bench PC ran all ~9 benches in parallel.</li>
+<li><strong>An exclusive lock.</strong> One pipeline owns the bench; the others queue. (Jenkins: a single executor, or the Lockable Resources plugin's <code>lock</code>. GitHub Actions: a <code>concurrency</code> group. GitLab: <code>resource_group</code>.) <a href="stories.html#STAR-21">STAR-21</a> took the bench by schedule instead: at 4 a.m. India time it closed any open PROVEtec session and restarted it.</li>
+<li><strong>Reset to a known state: this <em>is</em> the sandbox.</strong> Every run starts the same way:</li>
+<li>restart the test tool, so no stale session or settings carry over ( <a href="stories.html#STAR-21">STAR-21</a>'s job closed and restarted PROVEtec before every run, even if someone was on the bench)</li>
+<li>power-cycle the ECU from a programmable supply (often controlled over RS-232/LAN: )</li>
+<li>flash the exact build the pipeline just produced (UDS programming session + download: <a href="knowledge.html#k8">see notes</a>)</li>
+<li>clear the fault memory and reset the ECU (UDS 0x14, 0x11)</li>
+<li>load the pinned plant model, ConfigurationDesk project and restbus configuration, and record their versions</li>
+<li>put the FIU back to no-fault</li>
+<li>run a <strong>health check / smoke</strong> before any real test: bench alive, communication up, no stray DTCs</li>
+<li><strong>Run, then tear down.</strong> Run the tests, publish results tied to requirement IDs, leave the bench in a safe idle state, release the lock.</li>
+<li><strong>Version everything.</strong> Test scripts, framework libraries, plant model and bench configuration are tagged with the software build under test (G-09), so any run can be reproduced.</li>
+</ol>
+<h3>A tiered pipeline: not every commit touches the bench</h3>
+<pre><code>Every commit → build + static analysis + unit tests + SIL (cloud containers: true sandboxes)
+Every build/merge → flash to HIL → health check → smoke set (minutes)
+Nightly → full HIL regression (hours)
+Release → release-gate suite + trace report → human sign-off
+</code></pre>
+<h3>Fail policy: infrastructure vs product</h3>
+<p>If flashing or the health check fails, the run is <strong>infrastructure / blocked</strong>: retry once, or take the bench out of the pool and alert its owner. Don't report it as a product bug. Only a failure <em>after</em> a clean health check counts against the software. (Same split as <a href="knowledge.html#k15">see notes</a> three suspects; flaky tests: .)</p>
+<p><strong>Your real version (<a href="stories.html#STAR-21">STAR-21</a>):</strong> when the nightly check failed a bench, the HIL operators booked it, root-caused it, and told testers in advance about the issue, its dependencies and the expected fix date, before anyone had to escalate.</p>
+<h3>"Ready for deployment" means something different here</h3>
+<p>In automotive, a green pipeline doesn't deploy anything to vehicles. It produces a <strong>release candidate plus evidence</strong> (reports tied to requirements), and a human signs off the release gate.</p>
+<h3>Your own bridge : Aarogya PR #5 has the same shape</h3>
+<table>
+<thead>
+<tr>
+<th>Aarogya PR #5 (web, )</th>
+<th>ECU pipeline with HIL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Tests in cloud CI</td>
+<td>Unit + SIL per commit</td>
+</tr>
+<tr>
+<td>Docker image built once, deployed as-is</td>
+<td>One ECU build, flashed exactly as built</td>
+</tr>
+<tr>
+<td>Staging deploy + smoke</td>
+<td>Flash to HIL + health check + smoke</td>
+</tr>
+<tr>
+<td>Nightly CT against the live API</td>
+<td>Nightly HIL regression</td>
+</tr>
+<tr>
+<td>Approval before production</td>
+<td>Human release gate</td>
+</tr>
+<tr>
+<td>Automatic rollback</td>
+<td>Back to a known state / the last good build</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The HIL bench is the <em>staging environment</em> of an ECU pipeline, not its sandbox.</strong> You've already designed that pattern once.</p>
+<h3>The practical limits (G-07)</h3>
+<ul>
+<li><strong>Scarce benches:</strong> HIL can't run on every commit at cloud scale → tiering, nightly runs, a bench pool.</li>
+<li><strong>State:</strong> a run is only as clean as its reset.</li>
+<li><strong>Sharing:</strong> queues, so bench scheduling matters. <a href="stories.html#STAR-08">STAR-08</a>: you replaced ad hoc booking with self-service scheduling (20–22 h/day utilisation). That was booking by people; the CI lock is the automated version.</li>
+<li><strong>Speed:</strong> a smoke subset per build, the full regression nightly.</li>
+<li><strong>Hardware drift</strong> (relays, connectors, grounding): health checks and bench KPIs catch it. <a href="stories.html#STAR-02">STAR-02</a>'s ground loop is why that matters.</li>
+<li><strong>The physical wiring can't be versioned:</strong> record the bench ID with every result.</li>
+</ul>
+<p><em>Your Daimler setup ( <a href="stories.html#STAR-21">STAR-21</a>) was </em><em>scheduled</em><em> continuous testing: a nightly 4 a.m. Jenkins job for bench health and inventory across ~9 benches in India, the USA and Germany, run on all of them in parallel in about half an hour. 4 a.m. India time, for every bench, was chosen because most testers were in India, so the benches were least used then: isolation in time, done by scheduling. It covers this model's agent-per-bench setup (one Jenkins agent on each bench PC, all benches in parallel), its health-check and version-record steps (the A-part numbers record each bench's variant), a clean restart of the test tool (the job closed and restarted PROVEtec, even if someone was on the bench) and its fail policy, not per-build flashing, so present the rest as how HIL CI works in general. Result: the check ran every day, automatically, instead of by hand, and faults were caught before the working day.</em></p>
+<p><strong>90-sec version (~145 words):</strong> <em>"Cloud CI assumes a fresh, identical environment for every job. A HIL bench is the opposite: physical, scarce, shared, and it remembers state: flashed software, stored faults, relay positions. So you don't sandbox the bench; you make each run start clean. A CI agent runs on the bench PC with a label, so jobs reach the right bench. A lock gives one pipeline exclusive use, and others queue. Every run starts the same way: power-cycle, flash the exact build from the pipeline, clear the fault memory, load the pinned plant model and configuration, reset the fault-injection unit, and pass a health check before any real test. Because benches are scarce, the pipeline is tiered: unit and SIL tests per commit in the cloud, a HIL smoke set per build, full regression nightly. And a bench failure is flagged as infrastructure, not as a product bug."</em></p></article><article class="note" id="k14"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">Legacy dSPACE PHS: architecture + recommissioning a transported rig</span></h2><h3>PHS in one paragraph</h3>
+<p><strong>What a body-domain (BCM) HIL leans on:</strong> low-speed networks (CAN, LIN), dense digital I/O for switches and sensors, and outputs that carry lamp and motor currents (the ECU drives real or substitute loads; the HIL measures its PWM). That's why the CAN and digital/PWM boards come up first, and why the 12/24 V supply has to be steady.</p>
+<p><strong>What a truck body-domain HIL typically carries ( general, not a record of my rig; my confirmed layout is in <a href="stories.html#STAR-01">STAR-01</a>):</strong> <em>ECUs:</em> body controller, door modules, steering column module (light, wiper and indicator stalks), climate control (HVAC), parking / auxiliary heater, central locking with keyless entry and immobiliser, mirror control (often inside the door modules), trailer module (trailer lighting). <em>Loads and switches:</em> real lamp loads (headlamps, indicators, tail, brake and marker lamps), wiper motor, horn, window-lift motors, door-lock actuators, mirror motors and heaters, HVAC blower and flap motors, and switch panels for lights, hazards, wipers, windows, mirrors and locks, plus truck-specific ones such as the differential lock and PTO.</p>
+<h3>Power entry: from the lab socket to the boards</h3>
+<ul>
+<li>General: how mains reaches a dSPACE PHS-era simulator. Not a record of my rig: my confirmed path is the "Mapped to <a href="stories.html#STAR-01">STAR-01</a>" paragraph at the end . Sources: dSPACE Catalog 2005, "ECU Testing" section (Simulator Mid-Size and Full-Size hardware); dSPACE's expansion-box support page (5 V current per box); the PX10 data sheet (mains input, via a ManualsLib search result). dSPACE's PX20 data sheet and cabinet installation guides sit behind the mydSPACE login, so the exact inlet and main switch on a factory cabinet are <strong>not verified</strong>. *</li>
+</ul>
+<p><strong>Short answer:</strong> the lab socket doesn't connect to a PHS board or to the PHS bus. It feeds the cabinet's mains entry, and from there mains goes to each unit that makes its own DC.</p>
+<ol>
+<li><strong>Lab socket → the cabinet's mains entry:</strong> a main switch (often with a breaker or an emergency stop) → the cabinet's <strong>power distribution unit</strong> (a mains distribution strip or panel inside the rack). <em>(Typical 19-inch rack practice; not verified for a factory dSPACE cabinet.)</em></li>
+<li><strong>Power distribution unit → three kinds of consumer:</strong></li>
+<li><strong>The PX expansion box</strong> (PX5 / PX10 / PX20) takes mains through its own built-in supply (PX10 data sheet: 100–240 V AC, 50–60 Hz), which makes the backplane rails (+5 V, ±12 V) for the processor and I/O boards in the slots. dSPACE lists the 5 V budget per box: PX20 up to 60 A, PX10 and PX5 33 A. A DS1006 alone draws about 24 A at 5 V, so the box and the board count have to fit together.</li>
+<li><strong>The battery-simulation supply:</strong> a programmable, remote-controlled switched-mode supply that stands in for the vehicle battery; "truck-capable", 0–50 V, in the Full-Size simulator (dSPACE catalog). The real-time model controls it, so a test can reproduce the voltage dip at engine start. Its output typically goes through <strong>power switch modules</strong> onto switched battery rails (<strong>terminal 30</strong> = permanent battery plus, <strong>terminal 15</strong> = ignition, <strong>terminal 31</strong> = ground), which feed the ECUs and the real loads through the breakout box and harness. The power switch modules also handle sleep and wake-up and measure each ECU's current.</li>
+<li><strong>The rest:</strong> the host PC (linked to the processor board through a link board), monitors and fans.</li>
+<li><strong>Multi-cabinet rigs</strong> (dSPACE: "multirack systems possible"): each cabinet needs mains for its own boxes and supplies, while the PHS bus reaches the other cabinets over fibre (DS802, above).</li>
+</ol>
+<p><strong>Mapped to <a href="stories.html#STAR-01">STAR-01</a> :</strong> my rig follows this picture exactly: lab-socket switch → the master cabinet's power distribution unit → the expansion box (board voltages), one programmable Delta at 24 V (truck-battery stand-in for the ECUs and loads), and mains to the other two cabinets, whose expansion boxes link to the master's by fibre (full path: <a href="stories.html#STAR-01">STAR-01</a>). 24 V fits a truck rig from Germany: European trucks run 24 V .</p>
+<h3>Which Delta? Models that can run at 24 V (, for recognising the unit)</h3>
+<table>
+<thead>
+<tr>
+<th>Series (power, size)</th>
+<th>Models that reach 24 V</th>
+<th>Current at 24 V</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SM800 (800 W, half-width 19-inch, 2U)</td>
+<td>SM70-AR-24 (0–35 V range)</td>
+<td>up to 24 A</td>
+</tr>
+<tr>
+<td>SM1500 (1.5 kW, full-width 19-inch, 2U)</td>
+<td>SM35-45 · SM52-AR-60 (0–26 V range) · SM52-30 · SM70-22</td>
+<td>45 A · 60 A · 30 A · 22 A</td>
+</tr>
+<tr>
+<td>SM3300 (3.3 kW, 19-inch, 2U)</td>
+<td>SM66-AR-110 (0–33 V range)</td>
+<td>up to about 110 A (within 3.3 kW)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>How a model drives a Delta:</strong> see "How the model sets the battery voltage: PHS vs SCALEXIO" below.</p>
+<h3>How the model sets the battery voltage: PHS vs SCALEXIO</h3>
+<ul>
+<li>General, Delta facts from the SM1500 datasheet (V202602); SCALEXIO facts from dSPACE's battery-simulation page. On my PHS rig the real-time model set the Delta's voltage; <strong>how it was wired isn't recorded</strong>, so the PHS part is the standard way, not a record.*</li>
+</ul>
+<p><strong>The Delta's rear analog interface (SM1500 datasheet):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>Range</th>
+<th>Use on a HIL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Voltage (CV) programming input</td>
+<td>0–5 V</td>
+<td>Sets the output voltage, 0 to full scale</td>
+</tr>
+<tr>
+<td>Current (CC) programming input</td>
+<td>0–5 V</td>
+<td>Sets the current limit</td>
+</tr>
+<tr>
+<td>Voltage and current monitor outputs</td>
+<td>0–5 V</td>
+<td>Read back the actual voltage and current</td>
+</tr>
+<tr>
+<td>Status outputs</td>
+<td>CV / CC mode, limit</td>
+<td>Tells the rig whether the supply is current-limiting</td>
+</tr>
+<tr>
+<td>Remote shutdown, interlock</td>
+<td>digital</td>
+<td>Switch the output off from the rig or the emergency stop</td>
+</tr>
+<tr>
+<td>Remote sense</td>
+<td>two sense leads</td>
+<td>Holds the voltage at the load, not at the supply's terminals</td>
+</tr>
+<tr>
+<td>Isolated programming (option)</td>
+<td>0–5 V or 0–10 V</td>
+<td>Breaks the ground link between the rig and the supply</td>
+</tr>
+</tbody>
+</table>
+<p><strong>On the PHS rig (the standard wiring):</strong></p>
+<ol>
+<li><strong>Voltage setpoint:</strong> the model's setpoint is scaled and sent out on an <strong>analog output (DAC) channel</strong> of a PHS I/O board into the CV input. Scaling: control voltage = 5 V × setpoint ÷ full scale. For a 35 V model such as the SM35-45: 24 V → 3.43 V, and a dip to 18 V → 2.57 V. Because the model sends it every step, a test can play a crank profile in real time.</li>
+<li><strong>Current limit:</strong> a second analog output into the CC input, or a fixed limit set on the front panel.</li>
+<li><strong>Read-back:</strong> the monitor outputs go to <strong>analog input (ADC) channels</strong>, so the model and ControlDesk see the actual voltage and current, and a test can check an ECU's current draw.</li>
+<li><strong>Safety:</strong> remote shutdown or interlock is wired to a digital output and the emergency-stop chain, so the model or the e-stop can cut the output.</li>
+<li><strong>Remote sense:</strong> leads to the rig's supply distribution point, so the drop in the cables at high lamp current doesn't lower the ECUs' voltage.</li>
+</ol>
+<p><strong>Pitfalls:</strong>
+- DAC channels often span ±10 V while the input takes 0–5 V. Clamp the setpoint in the model: a wrong gain can command the full 35 V into 24 V ECUs.
+- The DAC and the supply share a ground, which can create a ground loop (compare <a href="stories.html#STAR-02">STAR-02</a>). The isolated programming option exists for this.
+- How fast a dip can be depends on the supply's programming speed. Delta offers a high-speed programming option.
+- <strong>The digital alternative</strong> (RS232 or Ethernet) suits steady setpoints from the host or automation, but it's too slow and not deterministic enough for a real-time crank profile.</p>
+<p><strong>On SCALEXIO (built in):</strong>
+- A <strong>battery simulation controller</strong> (e.g. the DS2907), or the power-supply control <strong>integrated in the DS2680 I/O Unit</strong>, drives the programmable supply "by current and voltage values". dSPACE: it's addressed "directly within the simulation model. No additional I/O is needed", and you can "read out and check the latest current and voltage values at any time".
+- <strong>In ConfigurationDesk:</strong> add the power-supply / battery-simulation function, map it to the controller channel, and connect model ports for the voltage setpoint and current limit, plus the read-backs. Build, and ControlDesk shows the actual values while the model's voltage profile runs in real time. Menu names vary by release.
+- Power switches then route the supply onto terminal 30 / 15 for each ECU. ** dSPACE lists the DS2680's power switches <strong>without current measurement</strong>; ECU current comes from current-measuring inputs or the supply's read-back .
+- my SCALEXIO emulates the traction battery (pack and cells) scaled to low voltage. Its cell and pack channels are typically driven the same way: the battery or BMS model's outputs are mapped to the emulator's channels. On my rig a <strong>DS2680</strong> controls the ECU supply voltage ).</p>
+<h3>Same power logic on SCALEXIO?</h3>
+<ul>
+<li>General, from dSPACE's public SCALEXIO pages (battery simulation, Rack System), The internal supplies of the processing unit and the I/O racks are typical practice, <strong>not verified</strong> on dSPACE's public pages. my own 5-cabinet SCALEXIO: the note at the end of this section.*</li>
+</ul>
+<p><strong>Short answer: yes, the same principle.</strong> Mains comes into the cabinet's distribution, and every unit makes its own DC. Three things differ.</p>
+<ol>
+<li><strong>Lab socket → the cabinet's main switch and power distribution</strong>, as on PHS.</li>
+<li><strong>The power distribution feeds:</strong></li>
+<li><strong>The SCALEXIO Processing Unit</strong>, a real-time industrial PC with its own mains supply.</li>
+<li><strong>The SCALEXIO rack or LabBox with the I/O boards</strong> (HighFlex boards, MultiCompact units such as the DS2680 I/O Unit), with its own supply for the boards. It talks to the processing unit over <strong>IOCNET</strong>, dSPACE's real-time I/O network. That's the counterpart of the PHS bus plus the fibre link to other boxes, and it reaches racks in other cabinets the same way.</li>
+<li><strong>The programmable power supply unit (battery simulation).</strong> dSPACE: it "feeds the components to be tested" and is "remotely controlled from the real-time model". A battery simulation controller (e.g. the DS2907) drives it, or the DS2680 I/O Unit, which integrates the power supply control and the power switch. Its output goes through power switches onto the terminal 30 / 15 rails to each ECU, and the current can be read back during the test.</li>
+<li>The host PC, fans and so on.</li>
+<li><strong>Multi-cabinet:</strong> each cabinet takes mains, and IOCNET links the I/O across cabinets.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>my PHS rig</th>
+<th>SCALEXIO</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Battery supply</td>
+<td>One programmable Delta, run at 24 V, <strong>set by the real-time model</strong> : a third-party supply the model drives</td>
+<td>Programmable, set by the real-time model, with the control built in (a battery simulation controller or the I/O unit): crank dips, under- and over-voltage tests</td>
+</tr>
+<tr>
+<td>Processor ↔ I/O</td>
+<td>PHS bus inside the box; fibre links to the other two cabinets' boxes</td>
+<td>IOCNET to I/O units in any rack or cabinet</td>
+</tr>
+<tr>
+<td>ECU power switching</td>
+<td>not described</td>
+<td>Power switches built into the I/O (e.g. DS2680; its switches don't measure current, <a href="knowledge.html#k26">see notes</a>)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Migration detail:</strong> IOCNET can also connect a SCALEXIO processing unit to existing simulators built on DS1005, DS1006 or DS1007 boards (dSPACE), so PHS-era I/O can be reused during a move to SCALEXIO.</p>
+<p><strong>my 5-cabinet SCALEXIO :</strong> two power sockets (master cabinet, which feeds the drive, HV and BMS cabinets; battery emulator cabinet), FPGA cards for inverter-motor simulation, and a battery emulator scaled to low voltage, so the rig isn't high voltage (full description: <a href="stories.html#STAR-16">STAR-16</a>). Why a separate socket: a battery emulator draws far more power than the I/O racks, so it gets its own circuit; it can't trip the one the processor and I/O run on, and it can be isolated on its own for safety work. How scaled emulation works: the BMS reads each cell through a cell-emulator channel (a few volts per cell) and the pack voltage arrives as a scaled signal, so the ECUs are tested at signal level and nobody works near high voltage.</p>
+<h3>Bring-up order for a transported or long-idle rig</h3>
+<p>Bottom-up, one layer at a time, with a gate before the next layer goes in. A failure then points at the layer just added.</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Why</th>
+<th>Gate before the next step</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1. <strong>Isolate:</strong> all boards out; check each backplane rail (+5 V, +12 V, −12 V) against chassis ground</td>
+<td>A short from a warped backplane or loose debris would take out every board at power-on</td>
+<td>No rail shorted. Use resistance mode as well as the beeper: bulk capacitors make it chirp briefly as they charge; a steady low reading is the real short</td>
+</tr>
+<tr>
+<td>2. <strong>Power:</strong> supplies wired to the distribution bus; empty box/cabinet powered; every slot measured</td>
+<td>Legacy processor boards reset or throw faults on a sagging or noisy rail</td>
+<td>Levels within ±5 %; ripple within limits (below). Re-check under load after step 4: some switching supplies need a minimum load to regulate</td>
+</tr>
+<tr>
+<td>3. <strong>Processor + host link only</strong> (multi-processor: one board first, then the others and their Gigalinks)</td>
+<td>Proves the core and the host path before any I/O can confuse the picture</td>
+<td>The host flashes and runs a blank model</td>
+</tr>
+<tr>
+<td>4. <strong>I/O boards one at a time</strong>, power off between insertions (body domain: CAN and digital/PWM boards first)</td>
+<td>A bad board is found by the step that fails, not guessed at</td>
+<td>Every output toggles cleanly in the 1 Hz test (below)</td>
+</tr>
+<tr>
+<td>5. <strong>Harness + FIU:</strong> reconnect I/O boards → FIU → breakout box; map every physical pin to its model channel</td>
+<td>Transport pulls pins out of unsupported harnesses; FIU relays stick</td>
+<td>Loopback: every output, toggled from a ControlDesk layout, reads back on its paired input</td>
+</tr>
+</tbody>
+</table>
+<h3>Oscilloscope settings</h3>
+<p><strong>Rail check (step 2)</strong>
+- <strong>Ripple and noise:</strong> AC coupling (blocks the DC so you can zoom to millivolts), 20–50 mV/div; timebase around 10 µs/div for switching noise, 1 ms/div for slower ripple. Rule of thumb from the write-up: under ~50 mV peak-to-peak on the 5 V logic rail, under ~120 mV on 12/24 V. The real limit is what the boards tolerate (check the datasheets): a typical off-the-shelf 5 V supply may itself be specified above 50 mV.</p>
+<p><strong>I/O board check (step 4)</strong>
+- A diagnostic model toggles every digital output at 1 Hz: 500 ms high, 500 ms low.
+- DC coupling; 2 V/div for 5 V logic, 5 V/div for 12/24 V outputs.
+- Timebase 100–200 ms/div: ten divisions show one to two full periods. (The write-up's 500 ms/div shows five.)
+- Trigger: <strong>Normal</strong>, not Auto (Auto free-runs between slow edges, so the trace won't hold still); rising edge; level at half the expected high (2.5 V for 5 V logic).
+- Pass: square edges and a flat high level. Rounded edges or a drooping high point to a damaged output driver on that board.</p>
+<h3>What survives heavy transport (typical pattern, not a record of my rig)</h3>
+<ul>
+<li><strong>Usually fine:</strong> backplanes, cabinet frames, passive load-resistor banks, and processor boards whose card guides stayed locked.</li>
+<li><strong>High risk:</strong> mechanical relays in the FIU (stuck contacts, dislodged springs); heavy harnesses without strain relief pulling their own pins out; hairline PCB cracks near heavy components such as large capacitors.</li>
+</ul>
+<h3>Kit for the job</h3>
+<p>Oscilloscope; true-RMS multimeters; a variable bench supply (to power sections current-limited, in isolation); industrial DC supplies for any missing rails (5 V, ±12 V, 24 V); loopback connectors and breakout-box patch cables; crimp tools for D-Sub and Harting connectors; a host PC with the legacy ControlDesk and RTI versions that match the processor board generation.</p>
+<h3>Replacing damaged FIU channels with external relays</h3>
+<p>Mechanical relays give a true open circuit. Solid-state relays leak a small current when "off" and add on-resistance, which can hide an open-load fault from the ECU's diagnostics or shift a measured current. Keep open-circuit faults on mechanical contacts, and document every rerouted channel so each test result stays traceable to the rig configuration it ran on.</p>
+<h3>CAN loopback, step by step</h3>
+<ul>
+<li>General HIL practice, not a record of what the <a href="stories.html#STAR-01">STAR-01</a> team did. Whether their loopback covered the CAN channels isn't confirmed. *</li>
+</ul>
+<p><strong>The idea:</strong> a CAN frame only counts as sent when <strong>another node acknowledges it</strong>. So one channel can't test itself. Wire two channels of the HIL's CAN board together, make one the sender and the other the receiver, check every frame arrives intact, then swap roles.</p>
+<ol>
+<li><strong>Wire:</strong> CAN_H to CAN_H, CAN_L to CAN_L, ground to ground. On a 9-pin D-sub (CiA 303-1): pin 7 = CAN_H, pin 2 = CAN_L, pin 3 = ground. Swapping H and L gives only errors, no valid frames.</li>
+<li><strong>Terminate:</strong> a CAN bus needs 120 Ω at each end. With power off, measure between CAN_H and CAN_L: <strong>60 Ω</strong> = both ends terminated (correct) · 120 Ω = one end only · open = none · near 0 Ω = a short. A short test cable often works without termination, which hides the problem until the real harness goes on.</li>
+<li><strong>Configure both channels the same:</strong> the same bit rate (e.g. 250 or 500 kbit/s) and the same transceiver type. The DS4302 offers high-speed and fault-tolerant low-speed CAN, and the two can't share wires. The receiver must be active, not in listen-only mode, or nothing sends the acknowledgement. <strong>For CAN FD:</strong> both channels need the same arbitration <em>and</em> data bit rates, and FD-capable transceivers; termination matters more at the faster data rate.</li>
+<li><strong>Send and check:</strong> channel A sends a known frame every 10 ms, e.g. ID 0x123 with 8 bytes <code>01 02 03 04 05 06 07 08</code>. Channel B checks the ID, the length (DLC) and every byte, and counts: 1,000 sent = 1,000 received. Try an 11-bit ID and a 29-bit (extended) one, since truck networks on J1939 use 29-bit IDs. Then reverse: B sends, A receives.</li>
+<li><strong>Pass:</strong> every frame arrives with the right ID and data, no error frames, and both channels' error counters stay at 0.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Likely cause</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Nothing received; the sender keeps retrying, its error counter climbs, and it goes error-passive</td>
+<td>No acknowledgement: an open wire, the receiver inactive or in listen-only mode, or a bit-rate mismatch</td>
+</tr>
+<tr>
+<td>Some frames lost or error frames, worse on longer cables</td>
+<td>Termination missing or wrong (signal reflections), or bit timing slightly off</td>
+</tr>
+<tr>
+<td>A channel goes bus-off</td>
+<td>CAN_H shorted to CAN_L, ground or supply, or H and L swapped</td>
+</tr>
+<tr>
+<td>Works on the short test cable, fails through the harness</td>
+<td>Termination, or a bad pin somewhere in the harness path</td>
+</tr>
+</tbody>
+</table>
+<p><strong>On a scope (optional):</strong> high-speed CAN idles (recessive) with both lines at about 2.5 V. A dominant bit pulls CAN_H to about 3.5 V and CAN_L to about 1.5 V. Clean, square edges mean a healthy bus.</p>
+<p><strong>Why it matters on a HIL:</strong> it proves the CAN board, its transceivers, the harness to the breakout box and the bit-rate setting before an ECU is connected. If the ECU then stays silent, the fault is on the ECU side or in the restbus setup, not the rig. The same wiring can also provoke faults on purpose (short H to L through the FIU → bus-off), which is the bus-level fault injection in <a href="knowledge.html#k17">see notes</a>.</p>
+<h3>Glossary</h3>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>What it actually means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>PHS bus</strong></td>
+<td>Peripheral High-Speed bus: dSPACE's pre-SCALEXIO bus linking a processor board (DS1005/DS1006) to I/O boards in PX expansion boxes. Not VMEbus. dSPACE service ended 31 Dec 2024.</td>
+</tr>
+<tr>
+<td><strong>AC vs DC coupling (oscilloscope)</strong></td>
+<td>DC coupling shows the whole signal, so you read a rail's level. AC coupling blocks the DC part, so you can zoom to millivolts and see only the ripple and noise riding on it.</td>
+</tr>
+<tr>
+<td><strong>Power-supply ripple</strong></td>
+<td>The small periodic variation left on a DC rail by the supply's rectification or switching, measured peak-to-peak. Too much, and digital boards reset or throw faults.</td>
+</tr>
+<tr>
+<td><strong>Staged insertion</strong></td>
+<td>Adding boards one at a time, power off in between, testing after each, so a failure points at the board just added.</td>
+</tr>
+<tr>
+<td><strong>Battery-simulation supply</strong></td>
+<td>A programmable supply that stands in for the vehicle battery on a HIL, controlled from the real-time model so tests can vary the voltage (e.g. the dip at engine start). dSPACE's Full-Size simulator: 0–50 V, truck-capable. Separate from the expansion box's own supply, which powers the boards.</td>
+</tr>
+<tr>
+<td><strong>Terminal 30 / 15 / 31 (KL30 / KL15 / KL31)</strong></td>
+<td>The standard vehicle supply terminals (German <em>Klemme</em>): 30 = permanent battery plus, 15 = switched by the ignition, 31 = ground. A HIL switches ECU supply rails the same way, so it can test sleep, wake-up and ignition cycles.</td>
+</tr>
+<tr>
+<td><strong>Loopback test</strong></td>
+<td>Connect an <strong>output</strong> channel back to an <strong>input</strong> channel, drive a known signal, and check the input reads exactly that. It proves the whole path, from the model channel through the I/O board, harness, FIU and breakout box and back, <strong>before any ECU is connected</strong>. <strong>By signal type:</strong> digital (set high/low, read it back); PWM (drive e.g. 1 kHz at 30 % duty, measure frequency and duty); analog (set 5.00 V, read within tolerance); CAN (two channels wired together, send a frame on one, receive it on the other: see "CAN loopback, step by step" above). <strong>How it's wired:</strong> a jumper at the breakout box, or a loopback harness plugged in where the ECU connector would go. <strong>Example:</strong> digital output 12 → breakout pin 34 → jumper → digital input 7; toggle at 1 Hz and the input must follow. If it stays low: an open wire, a pin in the wrong place, or a stuck FIU relay. <strong>Why before ECUs:</strong> a pin in the wrong place can put 24 V onto an ECU input or short an output. <strong>Limit:</strong> it proves wiring and I/O, not the ECU or the plant model. <strong>On <a href="stories.html#STAR-01">STAR-01</a>:</strong> after the team rebuilt the pin map by hand, a loopback on every channel proved each pin went where the map said.</td>
+</tr>
+<tr>
+<td><strong>Relay contact welding</strong></td>
+<td>Contacts fused shut by arcing or inrush current while switching under load, so the relay can't open. Needs current: transport shock bends contacts or dislodges springs instead.</td>
+</tr>
+</tbody>
+</table></article><article class="note" id="k21"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">Ground loop on an e-mobility HIL</span></h2><h3>What happened</h3>
+<p>The story, roles and wording: <strong><a href="stories.html#STAR-02">STAR-02</a></strong>. In short: 2025, the 5-cabinet SCALEXIO; the HIL reloaded its models on every high-torque, high-current step; 2–3 months on software; the SME pointed to grounding; dSPACE and the central hardware team re-grounded it around one common point.</p>
+<h3>How a ground loop does this, step by step</h3>
+<ol>
+<li><strong>Every current needs a way back.</strong> Whatever current a high-torque step draws flows out through the supply wires and back through ground (return) conductors.</li>
+<li><strong>Ground wires aren't perfect.</strong> A strap or cable has a little resistance and inductance, so current through it makes a voltage across it: <strong>V = I × R</strong> for steady current, plus <strong>L × di/dt</strong> spikes whenever the current changes quickly. <em>Generic illustration, not your rig: 20 A through 10 mΩ of strap is 0.2 V; a fast current step through a metre of cable (about 1 µH) adds spikes on top.</em></li>
+<li><strong>A loop means more than one way back.</strong> If equipment is grounded at more than one point (each cabinet to its own earth, plus cable shields and signal grounds between cabinets), the return current splits across every path, including paths that were only meant to be a <strong>signal reference</strong>.</li>
+<li><strong>So "0 V" stops being the same everywhere.</strong> During the high-current step, one cabinet's ground sits a little above or below another's, with spikes every time the current changes. Every signal and data link between those cabinets sees that difference as noise.</li>
+<li><strong>Past the margin, the real-time system falls over.</strong> Electronics tolerate some ground noise. Beyond it, a processor resets or a real-time link drops; the real-time application stops and has to be loaded again: the <strong>"model reload"</strong>. Which part reset on your rig isn't recorded, so don't name one.</li>
+<li><strong>Why only on high-torque steps:</strong> the ground current grows with the load. At low load the shift stays inside the margin; a high-torque step pushes it over.</li>
+<li><strong>Why it looked like software:</strong> the symptom is a software symptom (a model reload), and it came during particular test scenarios, which points people at the model or controller running them.</li>
+</ol>
+<h3>Why a multi-cabinet rig is prone to it</h3>
+<h3>The fix: one common ground point</h3>
+<p><strong>Star (single-point) grounding:</strong> every cabinet's ground goes by its own heavy strap to <strong>one point or busbar</strong>, and there are no other ground paths between cabinets. Then there's only one way back, every cabinet shares the same 0 V, and the load current returns along its own conductor instead of through the signal references. Often done alongside it (not claimed for your rig): cable shields bonded at one end, or 360° at both ends with a proper equipotential bond; isolated or fibre links for signals between cabinets; short, heavy bonding straps.</p>
+<h3>How to tell it's ground, not software</h3>
+<table>
+<thead>
+<tr>
+<th>Sign</th>
+<th>Why it points at ground</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The failure follows the <strong>load</strong> (high current), not a function, a model or a software version</td>
+<td>Ground offsets scale with current; software bugs follow code paths</td>
+</tr>
+<tr>
+<td>It happens across different models and controllers</td>
+<td>Everything referenced to that ground is affected</td>
+</tr>
+<tr>
+<td>It changes when a cable, strap or cabinet connection is moved</td>
+<td>Moving a ground path changes the loop</td>
+</tr>
+</tbody>
+</table></article><article class="note" id="k23"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">Equipotential bonding: why every metal part is tied together</span></h2><p><strong>The core idea:</strong> current only flows between two points at <strong>different voltages</strong>. If everything a person can touch is at the same voltage, nothing flows through their body, even if all of it is at hundreds of volts. Bonding doesn't remove the voltage; it removes the <strong>difference</strong>.</p>
+<h3>Analogies</h3>
+<table>
+<thead>
+<tr>
+<th>Analogy</th>
+<th>How it maps</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Bird on a power line</strong></td>
+<td>Both feet at 11 kV → no difference → no current. A wing touching a pole (another potential) → current. Bonding makes the whole car one "wire".</td>
+</tr>
+<tr>
+<td><strong>Water tanks joined by a wide pipe</strong></td>
+<td>Voltage = water level, current = flow. Wide pipes (bonding straps) keep every tank at one level. A thin or corroded strap = a clogged pipe: levels drift apart, and that's the danger.</td>
+</tr>
+<tr>
+<td><strong>Two people in a lift</strong></td>
+<td>They can shake hands on floor 10 or floor 0; only the difference between them matters, not the height above ground.</td>
+</tr>
+</tbody>
+</table>
+<h3>Everyday examples</h3>
+<ul>
+<li><strong>Swimming pools:</strong> ladder, handrails, pump housing and the concrete's steel are bonded, so a pump fault doesn't put a voltage between the water and the rail.</li>
+<li><strong>Bathrooms (UK wiring practice):</strong> metal taps, pipes and the bath were traditionally bonded so wet skin can't bridge two potentials.</li>
+<li><strong>Operating theatres:</strong> all metal near the patient is bonded; even small differences are dangerous with internal probes.</li>
+<li><strong>Aircraft refuelling:</strong> tanker and aircraft are bonded before fuelling so no spark jumps between them.</li>
+</ul>
+<h3>In an EV: one fault, walked through</h3>
+<p>Setup: 350 V floating battery; inverter and motor housings bonded to the chassis at &lt; 0.1 Ω.</p>
+<ol>
+<li><strong>Fault:</strong> a chafed HV+ cable touches the inverter housing.</li>
+<li><strong>With bonding:</strong> inverter housing, motor housing, body panels and door handles all shift <strong>together</strong>. Hand on the door + hand on the motor housing = 0 V across you.</li>
+<li><strong>Why one fault is still safe:</strong> the battery floats; HV− isn't on the chassis, so there's no return path and almost no current. The <strong>insulation monitor</strong> sees HV+→chassis resistance collapse, flags it and blocks contactor closing.</li>
+<li><strong>Without bonding:</strong> the inverter housing is live, the panel next to it isn't, and a technician touching both becomes the connection.</li>
+</ol>
+<p><strong>Why the strap must be low-resistance:</strong> voltage across the strap = fault current × resistance. 10 A × 0.1 Ω = <strong>1 V</strong> (harmless); a corroded 50 Ω strap → <strong>500 V</strong> across the gap (lethal). Hence R100's &lt; 0.1 Ω limit, checked with a low-resistance ohmmeter.</p>
+<h3>Link to my work</h3>
+<p><a href="stories.html#STAR-12">STAR-12</a>: at Tata, chassis bonding was checked before switching HV contactors on prototypes . Why it matters on a proto-shop car: a strap can be missing or loose (a housing fitted without its strap, paint under a mounting bolt). Combine that with a <strong>welded contactor</strong> (HV always live, <a href="knowledge.html#k1">see notes</a>) and that's how someone gets hurt.</p></article><article class="note" id="k26"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">dSPACE DS2680 I/O Unit: ECU power control, switching, I/O, fault insertion</span></h2><h3>In one line</h3>
+<p>The DS2680 is a SCALEXIO <strong>"MultiCompact" I/O unit</strong>: one box that holds most of the I/O a powertrain or vehicle-dynamics ECU needs, plus the <strong>ECU power-supply control</strong>, <strong>power switches</strong> and a <strong>failure insertion unit (FIU)</strong>. dSPACE describes it as providing "all the I/O channels required" for HIL simulation of, for example, transmission or vehicle-dynamics ECUs. Without it you'd build the same thing from separate HighFlex boards plus a battery simulation controller (e.g. the DS2907) and an FIU / power-switch board (the DS2642).</p>
+<h3>Where it sits</h3>
+<pre><code>SCALEXIO Processing Unit (real-time model)
+        │ IOCNET (dSPACE's real-time I/O network)
+        ▼
+DS2680 I/O Unit ── Power Control 1 ──► programmable supply (designed for TDK-Lambda Genesys)
+   │ │ DC output
+   │ ▼
+   ├── Power Switch 2 (6 switches) ──► ECU supply rails (typically terminal 30 / 15)
+   ├── analog / digital / resistance I/O ◄─► ECU pins (through the FIU)
+   └── CAN FD / LIN / FlexRay (bus variant) ◄─► ECU buses
+</code></pre>
+<h3>What's in it</h3>
+<table>
+<thead>
+<tr>
+<th>Group</th>
+<th>Channels</th>
+<th>What it's for on a HIL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Analog In 1</strong></td>
+<td>20 · voltage only · 0–60 V · 16-bit</td>
+<td>Read the ECU's analog outputs: sensor supplies, actuator voltages</td>
+</tr>
+<tr>
+<td><strong>Digital In 1</strong></td>
+<td>30 · 0–60 V range · threshold 0–24 V</td>
+<td>Read the ECU's digital outputs: relay and lamp drivers, PWM outputs</td>
+</tr>
+<tr>
+<td><strong>Flexible In 2</strong></td>
+<td>18 · voltage or <strong>current</strong> measurement · ±18 A (16-bit, analog)</td>
+<td>Measure ECU output currents, e.g. a valve or solenoid driver</td>
+</tr>
+<tr>
+<td><strong>Analog Out 1</strong></td>
+<td>15 · 0–10 V DC · 14-bit</td>
+<td>Simulate sensor voltages: pedal, pressure, position</td>
+</tr>
+<tr>
+<td><strong>Analog Out 4</strong></td>
+<td>8 · 0–10 V, can sink current</td>
+<td>Sensor simulation where the ECU loads the signal</td>
+</tr>
+<tr>
+<td><strong>Analog Out 3</strong></td>
+<td>7 · AC, up to ±20 V</td>
+<td>AC sensor signals, e.g. inductive speed sensors</td>
+</tr>
+<tr>
+<td><strong>Resistance Out 1</strong></td>
+<td>12 · 16 Ω to 1 MΩ</td>
+<td>Simulate temperature sensors (NTC / PT) and potentiometers</td>
+</tr>
+<tr>
+<td><strong>Digital Out 1</strong></td>
+<td>28 · low-side, high-side or push-pull · 5–60 V</td>
+<td>Simulate switches, wake lines, PWM inputs</td>
+</tr>
+<tr>
+<td><strong>Power Control 1</strong></td>
+<td><strong>1 channel</strong> · controls a <strong>TDK-Lambda Genesys</strong> supply</td>
+<td><strong>The model sets the ECU supply voltage.</strong> This is the part my rig uses</td>
+</tr>
+<tr>
+<td><strong>Power Switch 2</strong></td>
+<td><strong>6 switches</strong> · up to 60 V · "4 x 6 A per channel" · <strong>50 A max in total</strong> · <strong>no current measurement</strong></td>
+<td>Switch the supply onto the ECUs' rails: power-up, power-down, ignition sequences</td>
+</tr>
+<tr>
+<td><strong>Bus</strong> (variant with bus support)</td>
+<td>2 × CAN / CAN FD, 2 × LIN (K-Line capable), 2 × FlexRay</td>
+<td>Restbus and ECU communication</td>
+</tr>
+<tr>
+<td><strong>FIU</strong></td>
+<td>broken wire · short to GND or UBAT · crossed wire between two channels · all with optional bouncing · fault switch up to 48 A</td>
+<td>Fault injection for diagnostics and functional-safety tests</td>
+</tr>
+<tr>
+<td><strong>Unit</strong></td>
+<td>475 × 215 × 132 mm · runs from 24 V · 60 W (84 W with buses) · IOCNET</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h3>How it controls the ECU supply (the part on my rig)</h3>
+<ol>
+<li><strong>ConfigurationDesk:</strong> add the power-supply function, map it to the DS2680's Power Control channel, and connect model ports for the voltage setpoint (and current limit), plus any read-back. Build and download.</li>
+<li><strong>At run time:</strong> the model sends the setpoint every step over IOCNET. The DS2680 commands the programmable supply, whose output feeds the ECUs, typically through the power switches onto terminal 30 (permanent battery) and terminal 15 (ignition).</li>
+<li><strong>What that lets a test do:</strong> hold the nominal voltage (24 V on European trucks, <a href="knowledge.html#k1">see notes</a>); play a <strong>crank dip</strong> in real time; step through <strong>under- and over-voltage</strong> limits (ISO 16750-2); power-cycle an ECU or run an ignition sequence by switching terminal 15; check reset, sleep and wake-up behaviour.</li>
+<li><strong>ControlDesk</strong> shows the setpoint and the actual values while the test runs, as with any SCALEXIO battery simulation .</li>
+</ol>
+<p><strong>Same idea as the PHS rig, built in.</strong> On <a href="stories.html#STAR-01">STAR-01</a>'s PHS rig, an analog output drove the Delta supply's 0–5 V programming input . On SCALEXIO with a DS2680, that link is a dedicated control channel: no spare analog output, no scaling cable, no extra I/O.</p>
+<ul>
+<li><strong>The power switches don't measure current.</strong> dSPACE lists them "without current measurement". For ECU current draw (e.g. sleep / quiescent current), use the Flexible In current channels (±18 A) or the supply's own read-back. *Earlier versions of <a href="knowledge.html#k14">see notes</a> said the DS2680 switches had current measurement; *</li>
+<li><strong>50 A in total across the six switches.</strong> An 18-unit powertrain rig needs more switching than one DS2680 gives (Claude's rough estimate for my rig: ~6–7 DS2680s, <a href="stories.html#STAR-16">STAR-16</a>): more DS2680s, or DS2642 FIU &amp; power-switch boards. Inference; how many on your rig isn't recorded.</li>
+<li><strong>The central FIU</strong> sits on either a DS2642 FIU &amp; Power Switch Board or the DS2680 (dSPACE). Faults on the supply lines (short to GND / UBAT, open) are a standard diagnostics test.</li>
+<li><strong>Clamp the setpoint in the model.</strong> Same rule as the Delta: a wrong value must never over-volt 24 V ECUs.</li>
+<li><strong>DS2680 vs DS2907:</strong> the DS2907 is a separate battery simulation controller; the DS2680 integrates the power control alongside the I/O. Both let the model set the supply.</li>
+</ul>
+<p><em>"On our SCALEXIO, the ECU supply is controlled through a dSPACE DS2680 I/O unit. Its power-control channel drives the programmable supply straight from the real-time model, so a test can hold the voltage, ramp it, or dip it like a crank, and check under- and over-voltage behaviour. The same unit carries a lot of the ECU I/O: analog, digital and resistance channels, power switches and a failure insertion unit, all on IOCNET."</em> Add the power-switch and terminal 30 / 15 detail only if that's how your rig is wired.</p>
+<h3>Likely follow-ups</h3>
+<table>
+<thead>
+<tr>
+<th>Question</th>
+<th>Answer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Which power supply does it drive?</td>
+<td>Not recorded. dSPACE designs the channel for a TDK-Lambda Genesys.</td>
+</tr>
+<tr>
+<td>How would you test under-voltage?</td>
+<td>Script the supply profile in the model (or AutomationDesk / PROVEtec): step down toward the lower limit of the ECU's voltage class, hold, check the ECU's degradation, DTCs and recovery, then a crank-dip profile per ISO 16750-2. Clamp the setpoint.</td>
+</tr>
+<tr>
+<td>How do you measure an ECU's sleep current?</td>
+<td>Not on the DS2680's power switches (no current measurement). Use a current-measuring input or the supply's read-back, or a precise external meter for microamps.</td>
+</tr>
+<tr>
+<td>Why a DS2680 instead of separate boards?</td>
+<td>One compact unit with the I/O, power control, switching and fault insertion that a powertrain ECU needs: less wiring and fewer boards to configure. Separate HighFlex boards give more channels or special functions.</td>
+</tr>
+<tr>
+<td>How does it talk to the processor?</td>
+<td>IOCNET, dSPACE's real-time I/O network, the same as every SCALEXIO I/O unit; it can reach units in other cabinets.</td>
+</tr>
+</tbody>
+</table></article><article class="note" id="k30"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">Testing a supplied virtual ECU you can&#x27;t see inside (black-box vECU, FMU intake, oracles, mutation testing)</span></h2><h3>1. The idea</h3>
+<p>You own three things: <strong>stimulus</strong> (planner + fault injection), <strong>plant</strong> (vehicle model) and <strong>oracle</strong> (pass/fail rules). A thin <strong>adapter</strong> connects them to their vECU in whatever format it arrives. The scenarios never change; only the adapter and the expected values (from <em>their</em> requirements) do.</p>
+<h3>2. What to ask for, and the formats it may come in</h3>
+<p><strong>The ask:</strong> <em>"An FMU if possible; otherwise a process or container that speaks CAN on a virtual interface. Plus the DBC, the E2E configuration, and the required reaction to each fault with its time limit."</em></p>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>How the bench connects</th>
+<th>Time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>FMU</strong> (FMI 2.0/3.0 co-simulation)</td>
+<td>FMPy: set inputs → <code>doStep(1 ms)</code> → read outputs</td>
+<td><strong>Exact</strong>: the bench owns time</td>
+</tr>
+<tr>
+<td>Process / container on (virtual) CAN</td>
+<td>python-can + the DBC</td>
+<td>Real time: includes transport and scheduling</td>
+</tr>
+<tr>
+<td>ROS 2 node</td>
+<td>Topics, ideally in simulated time</td>
+<td>Exact if sim time, else real</td>
+</tr>
+<tr>
+<td>Shared library / C code</td>
+<td>ctypes against their header</td>
+<td>Exact</td>
+</tr>
+<tr>
+<td>Simulink model</td>
+<td>Ask them to <strong>export an FMU</strong> (removes the licence problem)</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Firmware (.elf/.hex)</td>
+<td>Not a vECU: real board (PiL/HiL, <a href="knowledge.html#k31">see notes</a>) or an emulator such as Renode</td>
+<td>Real</td>
+</tr>
+</tbody>
+</table>
+<h3>3. Eight stages, each only after the one before passes</h3>
+<p><strong>A</strong> integration smoke (loads, talks, valid E2E on its own frames) → <strong>B</strong> interface conformance (signals, units, ranges, cycle jitter, counter wrap, start state) → <strong>C</strong> nominal, <strong>no false stop</strong> over a long noisy run → <strong>D</strong> fault matrix against <em>their</em> FTTI → <strong>E</strong> boundaries (29.9 / 30.0 / 30.1 °/s; max delta and max delta + 1) → <strong>F</strong> back-to-back against a reference model → <strong>G</strong> regression and repeatability (fixed seed, CI on every version) → <strong>H</strong> bench self-check (seeded defects still caught: tool confidence).</p>
+<h3>4. Where "expected" comes from: four oracles</h3>
+<table>
+<thead>
+<tr>
+<th>Oracle</th>
+<th>Strength</th>
+<th>Weakness</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Their <strong>requirements</strong></td>
+<td>The real definition of correct</td>
+<td>Often thin for faults</td>
+</tr>
+<tr>
+<td><strong>Invariants</strong> ("never accelerate during a stop", "a stop stays latched until released")</td>
+<td>Work with a thin spec; catch surprises</td>
+<td>Say what must never happen, not what should</td>
+</tr>
+<tr>
+<td><strong>Physics</strong> (stopping distance ≈ v²/2a)</td>
+<td>Independent of any code</td>
+<td>Plant side only</td>
+</tr>
+<tr>
+<td><strong>Reference model</strong> (back-to-back)</td>
+<td>Covers everything the stimulus exercises</td>
+<td>Ours might be the one that's wrong: investigate every mismatch</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The bench's proof that this matters:</strong> a supplier-style FMU started a cold start in NORMAL instead of INIT, and the pass/fail matrix still said PASS. <strong>Only the back-to-back comparison caught it</strong>, and then the missing oracle check was added. <em>Pass/fail checks only what someone thought of; back-to-back finds what nobody wrote a check for.</em></p>
+<h3>5. FMU intake: day one, before any test</h3>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Blocks the run if</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Full validation of <code>modelDescription.xml</code> (FMPy's schema <strong>and</strong> rule checks)</td>
+<td>Any error</td>
+</tr>
+<tr>
+<td>FMI version; co-simulation vs model exchange</td>
+<td>ME only (needs a solver wrapper), or FMI 3.0 with an FMI 2.0 adapter</td>
+</tr>
+<tr>
+<td>A binary for this platform (<code>binaries/win64</code> …)</td>
+<td>Missing</td>
+</tr>
+<tr>
+<td>Variable list: causality, type, variability, unit, start value</td>
+<td>— (it's the basis of the mapping)</td>
+</tr>
+<tr>
+<td>Mapping their names to the bench's, abbreviation-aware, <strong>every guess confirmed by a human</strong></td>
+<td>A required signal has no candidate</td>
+</tr>
+<tr>
+<td>Lifecycle in <strong>child processes, repeated</strong> (run, reset, two instances, free → re-instantiate)</td>
+<td>A sequence the bench needs crashes or hangs</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Raw vs physical signals decide whether E2E is testable:</strong> with physical-only signals the CRC is gone. Ask for raw COM-level signals (or FMI 3.0 binary/clocks; FMI-LS-BUS for frame-level CAN).</p>
+<p><strong>Bench findings (typical of supplier FMUs):</strong>
+1. The export tool's defaults wrote an <strong>invalid model description</strong>, twice.
+2. <strong>Free → re-instantiate crashed</strong> the whole process, so the bench uses <code>fmi2Reset</code>.
+3. An <strong>intermittent crash</strong> with two instances, 8 runs in 10: one lifecycle run proves nothing.
+4. Plain name matching <strong>swapped acceleration and speed</strong>.</p>
+<h3>6. Testing the tests: mutation testing and the false-stop rate</h3>
+<ul>
+<li><strong>Mutation testing:</strong> seed deliberate bugs (no latch, no watchdog, a lenient E2E window, run-length E2E logic, a missing grade compensation…) and check the suite fails. On the bench: <strong>14 mutants, 100% caught</strong> by the full campaign. A suite that can't fail proves nothing.</li>
+<li><strong>False-stop rate:</strong> unnecessary stops per km. Too many and the team disables the safety layer. <strong>Rule of three:</strong> zero events in N trials bounds the rate below ~3/N at 95% confidence, so "no false stop in 5 km" is weak evidence. Bench: 1 false stop in 4.76 km at 0.5% CRC errors, an E2E window tuning finding.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>What it actually means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FMU / FMI</td>
+<td>Functional Mock-up Unit: a zip with <code>modelDescription.xml</code> and a compiled library per platform, following the FMI standard (Modelica Association), so a model or vECU can be shared without its source</td>
+</tr>
+<tr>
+<td>Co-simulation vs model exchange</td>
+<td>Co-simulation FMU: carries its own solver; you call <code>doStep</code>. Model exchange: only gives derivatives; the importer integrates. Controllers are normally co-simulation</td>
+</tr>
+<tr>
+<td>Back-to-back testing</td>
+<td>The same stimulus into two implementations (model vs code, reference vs supplier), comparing outputs; a verification method listed in ISO 26262</td>
+</tr>
+<tr>
+<td>Test oracle</td>
+<td>Whatever decides the expected result: requirements, invariants, physics, or a reference model</td>
+</tr>
+<tr>
+<td>Mutation testing</td>
+<td>Seeding deliberate bugs ("mutants") to check the test suite catches them; the share caught is the mutation score</td>
+</tr>
+<tr>
+<td>Tool confidence</td>
+<td>ISO 26262's term for justifying that a tool which decides pass/fail is itself trustworthy</td>
+</tr>
+<tr>
+<td>dSPACE VEOS</td>
+<td>dSPACE's PC-based simulation platform for SiL: runs virtual ECUs (e.g. FMUs or V-ECUs) and plant models on a PC, without real-time hardware; the SiL counterpart of a SCALEXIO HIL</td>
+</tr>
+<tr>
+<td>Rule of three</td>
+<td>Zero events in N independent trials bounds the true rate below about 3/N at 95% confidence</td>
+</tr>
+</tbody>
+</table></article><article class="note" id="k31"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">A lean SiL → PiL → HiL ladder, and what only a real bus teaches</span></h2><h3>1. The ladder: same scenarios at every level, each removing one excuse</h3>
+<table>
+<thead>
+<tr>
+<th>Level</th>
+<th>What runs the controller</th>
+<th>What it proves</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SiL, reference</td>
+<td>Python model</td>
+<td>The requirements and the test suite</td>
+</tr>
+<tr>
+<td>Native SiL</td>
+<td><strong>The firmware's C++</strong>, compiled for the PC</td>
+<td>The port behaves exactly like the model, before any hardware</td>
+</tr>
+<tr>
+<td>Loopback</td>
+<td>The board's whole node logic (core + link protocol + scheduler) on the PC</td>
+<td>Message handling, framing, resync, scheduling</td>
+</tr>
+<tr>
+<td><strong>PiL</strong> (processor in the loop)</td>
+<td>The real MCU, outputs over USB</td>
+<td>Real compiler, real timing, real execution time</td>
+</tr>
+<tr>
+<td><strong>HiL</strong></td>
+<td>The real MCU, outputs read <strong>through a real CAN bus</strong> by a second board</td>
+<td>Arbitration, ACK, error counters, transceivers, wiring</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The rule that makes HiL results trustworthy: one source of truth.</strong> All the logic lives in one portable core, and the Arduino shim is ~60 lines. Prove the core bit-exact against the model on the PC (bench: <strong>52/52 scenarios exact, 14/14 mutants identical</strong>). Then a HiL difference means timing or hardware, never a porting bug.</p>
+<p><strong>Lean on purpose:</strong> for a safe stop, the logic and timing of a safety controller can be checked with a PC vehicle model at a 1–10 ms step. Hard real-time HiL racks are worth paying for where the electrical behaviour itself is under test. For a startup: lakhs, not crores ( rough estimate; get quotes). Add a programmable supply and a relay board for dips and open wires.</p>
+<h3>2. What only a real bus teaches (CAN error confinement)</h3>
+<p>Each CAN node keeps a transmit (TEC) and a receive (REC) error counter: <strong>error active</strong> &lt; 128 ≤ <strong>error passive</strong> &lt; 256 ≤ <strong>bus-off</strong>.
+- <strong>The ACK-error exception (ISO 11898-1):</strong> a transmitter that is error passive and sees no ACK doesn't keep incrementing its TEC. <strong>So on a two-node bus, pulling a wire leaves the sender error passive, not bus-off.</strong> A safety controller that only watches for bus-off misses it, so it should treat transmit-error-passive as an actuator-bus fault too.
+- <strong>The corollary:</strong> one board alone on a bus never gets an ACK, so it sits error passive permanently. Bus monitoring must be off for single-board tests (a bench bug caught on review, before any hardware run).
+- Short lab wires hide termination problems that a vehicle harness wouldn't. Common ground matters for the transceiver's common-mode range.</p>
+<h3>3. Porting a model to C++ bit-exactly: four rules (from the bench)</h3>
+<ol>
+<li>Python's <code>round</code> rounds halves to <strong>even</strong>: use <code>nearbyint</code>, not <code>lround</code>.</li>
+<li>Python's <code>%</code> is never negative: emulate it for timestamps and counters.</li>
+<li>Keep Python's tie behaviour of <code>max</code>/<code>min</code> (the first argument wins on equality).</li>
+<li>No fused multiply-add: <code>-ffp-contract=off</code>.</li>
+</ol>
+<p>Also: the <strong>ESP32-S3 FPU is single-precision</strong>, so <code>double</code> runs in software. That's exact, but slower: measure the worst-case execution time on the target, then decide whether <code>float</code> would change any verdict (back-to-back again).</p>
+<h3>4. PC-bench transport traps (bench v2.1, CAN between processes on Windows)</h3>
+<ul>
+<li><strong>The bench must prove it keeps time</strong> (v2.3.1–2). A board with its own clock judges command age against it, so a PC that stalls makes fresh commands look stale, and the DUT reacts to the bench's fault. Measure the bench's lag on every real-time run and fail the run, not the DUT, above a few ms. Measured: 20–70 ms stalls on a laptop <strong>on battery</strong> (Balanced plan, CPU at base clock, other apps at 44% load), ≤ 2.6 ms on mains. Mitigations: mains power, a performance power plan, high process priority + a 1 ms timer (<code>timeBeginPeriod</code>), no heavy apps.</li>
+<li>
+<p><strong>Dry-run against an emulated board first:</strong> the board's exact firmware logic in a separate process, reached like a COM port. It caught a pyserial <code>socket://</code> read bug and the lag problem before any wiring. An emulator <em>thread</em> inside the bench runs late (Python's GIL), the way a slow MCU would, so it must be its own process.</p>
+</li>
+<li>
+<p>UDP multicast delivered every frame <strong>twice</strong>, some 60–90 ms late. A duplicate looks like a REPEATED E2E frame, so it caused false stops. Fix: sender sequence IDs.</p>
+</li>
+<li>Windows sleep granularity (~10 ms) made a 10 ms controller run late: busy-wait or a real-time OS.</li>
+<li>A late duplicate time message looked like a 16-bit clock wrap.</li>
+<li>Zombie processes from killed runs injected stale frames: always close the DUT in a <code>finally</code>.</li>
+<li>Opening a COM port can <strong>reset an ESP32</strong> (DTR/RTS): hold both low and wait for the firmware's hello.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>What it actually means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PiL (processor in the loop)</td>
+<td>The real target processor runs the compiled controller code, fed by a simulation over a link such as USB. Real timing and compiler, without the full electrical environment</td>
+</tr>
+<tr>
+<td>Error passive</td>
+<td>CAN fault-confinement state (TEC or REC ≥ 128): the node still communicates but signals errors only passively; at TEC ≥ 256 it goes bus-off</td>
+</tr>
+<tr>
+<td>ACK-error exception</td>
+<td>ISO 11898-1: an error-passive transmitter that gets no ACK doesn't keep raising its TEC, so a lone or disconnected node stays error passive instead of going bus-off</td>
+</tr>
+<tr>
+<td>Single source of truth (firmware)</td>
+<td>All logic in one portable core compiled for both PC and target, so equivalence proven on the PC carries over to the hardware</td>
+</tr>
+</tbody>
+</table></article><article class="note" id="k22"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">EV charging communication: CCS, MCS, DIN 70121, ISO 15118</span></h2><h3>Full forms</h3>
+<table>
+<thead>
+<tr>
+<th>Short</th>
+<th>Full form</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>CCS</strong></td>
+<td>Combined Charging System</td>
+<td>The plug and protocol standard for AC and DC charging in Europe and North America. "Combined": one inlet takes both AC and DC.</td>
+</tr>
+<tr>
+<td><strong>MCS</strong></td>
+<td>Megawatt Charging System</td>
+<td>CharIN's DC standard for heavy-duty trucks and buses: up to 3.75 MW (3,000 A at 1,250 V DC). Connector standard IEC 63379.</td>
+</tr>
+<tr>
+<td><strong>EVSE</strong></td>
+<td>Electric Vehicle Supply Equipment</td>
+<td>The charging station.</td>
+</tr>
+<tr>
+<td><strong>SECC</strong></td>
+<td>Supply Equipment Communication Controller</td>
+<td>The charging station's communication controller.</td>
+</tr>
+<tr>
+<td><strong>EVCC</strong></td>
+<td>Electric Vehicle Communication Controller</td>
+<td>The vehicle's communication controller. my team calls it the electric vehicle charge controller.</td>
+</tr>
+<tr>
+<td><strong>CP / PP</strong></td>
+<td>Control Pilot / Proximity Pilot</td>
+<td>The two signal pins in the plug. CP carries the basic PWM signalling and, on CCS, the digital messages. PP tells the vehicle a plug is in, and the cable's rating.</td>
+</tr>
+<tr>
+<td><strong>PLC</strong></td>
+<td>Powerline Communication (HomePlug Green PHY)</td>
+<td>How CCS carries the digital messages: modulated onto the CP wire.</td>
+</tr>
+<tr>
+<td><strong>SLAC</strong></td>
+<td>Signal Level Attenuation Characterization</td>
+<td>The PLC pairing step: makes sure the vehicle talks to the charger it's plugged into, not the one next to it.</td>
+</tr>
+<tr>
+<td><strong>HLC</strong></td>
+<td>High-Level Communication</td>
+<td>The digital message exchange (DIN 70121 or ISO 15118), as opposed to the basic PWM signalling.</td>
+</tr>
+<tr>
+<td><strong>TLS</strong></td>
+<td>Transport Layer Security</td>
+<td>Encrypts and authenticates the connection (the "S" in HTTPS). ISO 15118 uses it for the charging messages and Plug &amp; Charge certificates; DIN 70121 has none.</td>
+</tr>
+<tr>
+<td><strong>CCS2</strong></td>
+<td>CCS Combo 2</td>
+<td>The CCS plug used in Europe and India: the Type 2 AC plug plus two DC pins. CCS1 is the North American version.</td>
+</tr>
+<tr>
+<td><strong>10BASE-T1S</strong></td>
+<td>10 Mbit/s, baseband, one twisted pair, short reach</td>
+<td>Single-pair automotive Ethernet (IEEE 802.3cg); MCS's link to the charger. Explained below.</td>
+</tr>
+<tr>
+<td><strong>PLCA</strong></td>
+<td>Physical Layer Collision Avoidance</td>
+<td>10BASE-T1S's turn-taking scheme that makes a shared Ethernet bus deterministic.</td>
+</tr>
+<tr>
+<td><strong>EXI</strong></td>
+<td>Efficient XML Interchange</td>
+<td>The compact binary encoding DIN 70121 and ISO 15118 use for their XML-schema messages.</td>
+</tr>
+<tr>
+<td><strong>SDP</strong></td>
+<td>SECC Discovery Protocol</td>
+<td>How the vehicle finds the charger's network address after SLAC.</td>
+</tr>
+<tr>
+<td><strong>EIM</strong></td>
+<td>External Identification Means</td>
+<td>Authorisation outside the vehicle: an RFID card or an app. The only option in DIN 70121.</td>
+</tr>
+<tr>
+<td><strong>PnC</strong></td>
+<td>Plug &amp; Charge</td>
+<td>ISO 15118's automatic authorisation by a certificate in the vehicle.</td>
+</tr>
+<tr>
+<td><strong>OBC</strong></td>
+<td>On-Board Charger</td>
+<td>Converts AC from a Type 2 plug to DC for the battery. DC charging bypasses it.</td>
+</tr>
+<tr>
+<td><strong>CAN FD</strong></td>
+<td>CAN with Flexible Data-rate</td>
+<td>CAN with up to 64 data bytes per frame and a faster data phase . The charging links on my rig.</td>
+</tr>
+</tbody>
+</table>
+<h3>The layers, bottom to top</h3>
+<ol>
+<li><strong>Basic signalling (IEC 61851-1):</strong> the charger puts a 1 kHz PWM signal on the control pilot, and the vehicle changes its voltage level with a resistor. The level gives the state: <strong>A</strong> +12 V (nothing connected) · <strong>B</strong> +9 V (connected, not ready) · <strong>C</strong> +6 V (ready to charge) · <strong>D</strong> +3 V (charging, ventilation needed) · <strong>E</strong> 0 V (error) · <strong>F</strong> −12 V (charger fault). A <strong>5 % duty cycle</strong> means "digital communication required"; DC charging always uses it.</li>
+<li><strong>The link that carries the messages:</strong> CCS uses PLC over the control-pilot wire (ISO 15118-3). MCS uses 10BASE-T1S single-pair automotive Ethernet (ISO 15118-10).</li>
+<li><strong>The application protocol:</strong> DIN SPEC 70121, ISO 15118-2 or ISO 15118-20. The very first message, <strong>supportedAppProtocol</strong>, lists the protocols the vehicle speaks, and the charger picks one.</li>
+</ol>
+<h3>10BASE-T1S in one page</h3>
+<ul>
+<li>IEEE 802.3cg-2019</li>
+</ul>
+<p><strong>The name, decoded:</strong> <strong>10</strong> = 10 Mbit/s · <strong>BASE</strong> = baseband · <strong>T1</strong> = one twisted pair · <strong>S</strong> = short reach.</p>
+<ul>
+<li><strong>Speed and duplex:</strong> 10 Mbit/s, half duplex: one node talks at a time (see "Half duplex vs full duplex" below).</li>
+<li><strong>Topology:</strong> point-to-point, or a <strong>multidrop bus like CAN</strong>: at least 8 nodes on one pair, up to 25 m. That's the big difference from 100BASE-T1 and 1000BASE-T1, which are point-to-point only and need a switch.</li>
+<li><strong>Who talks when:</strong> classic Ethernet collision detection (CSMA/CD), or <strong>PLCA (Physical Layer Collision Avoidance)</strong>: the nodes take turns in a fixed round-robin, so the worst-case delay is bounded. That makes it deterministic, like CAN.</li>
+<li><strong>Why vehicles use it:</strong> it's real Ethernet, so IP, TCP and TLS run on it unchanged, but on one cheap pair and as a bus. It's pitched as a replacement for CAN and LIN in zonal architectures, and it removes the gateway between CAN and Ethernet.</li>
+<li><strong>Why MCS uses it:</strong> the ISO 15118-20 conversation is IP-based and secured with TLS. 10BASE-T1S carries it over a wired Ethernet link (ISO 15118-10), instead of CCS's powerline signal riding on the control-pilot wire.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>CAN FD</th>
+<th>10BASE-T1S</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Speed</td>
+<td>arbitration ~0.5–1 Mbit/s; data phase up to ~5–8 Mbit/s</td>
+<td>10 Mbit/s</td>
+</tr>
+<tr>
+<td>Payload per frame</td>
+<td>up to 64 bytes</td>
+<td>up to 1,500 bytes (an Ethernet frame)</td>
+</tr>
+<tr>
+<td>Topology</td>
+<td>bus</td>
+<td>bus (≥ 8 nodes, 25 m) or point-to-point</td>
+</tr>
+<tr>
+<td>Who talks when</td>
+<td>arbitration by ID (priority)</td>
+<td>PLCA round-robin, or CSMA/CD</td>
+</tr>
+<tr>
+<td>What runs on top</td>
+<td>CAN signals, ISO-TP, J1939</td>
+<td>IP, TCP/UDP, TLS, SOME/IP, ISO 15118-20</td>
+</tr>
+<tr>
+<td>On my rig</td>
+<td>the charging links inside the truck</td>
+<td>the MCS standard's link to the charger</td>
+</tr>
+</tbody>
+</table>
+<h3>Half duplex vs full duplex</h3>
+<ul>
+<li>
+<p>General. *</p>
+</li>
+<li>
+<p><strong>Full duplex:</strong> both sides send at the same time, like a phone call. Examples: RS-232 (separate transmit and receive wires), 100BASE-T1 and 1000BASE-T1 automotive Ethernet (both directions on one pair at once, using echo cancellation), switched Ethernet in general.</p>
+</li>
+<li><strong>Half duplex:</strong> data can flow either way, but only one direction at a time, like a walkie-talkie. <strong>CAN, CAN FD, LIN, 2-wire RS-485 and 10BASE-T1S</strong> are all half duplex: every node shares the same wires, so only one can drive them at a time, and each needs a rule for who talks next. CAN uses arbitration by ID, LIN the master's schedule, 10BASE-T1S PLCA turns.</li>
+<li><strong>Simplex:</strong> one direction only, e.g. a sensor that only transmits.</li>
+<li><strong>What it means in practice:</strong> on a half-duplex bus the bandwidth is shared. 10BASE-T1S's 10 Mbit/s is split across every node on the bus, and a node waits its turn. That's why bus load and message priority matter on CAN, and why a timing guarantee (arbitration, PLCA) is the selling point of these buses.</li>
+</ul>
+<h3>Type 2 AC, and how CCS2 builds on it</h3>
+<ul>
+<li>IEC 62196-2 (the plug) and IEC 61851-1 (the signalling)</li>
+</ul>
+<p><strong>Type 2</strong> (IEC 62196-2, often called the "Mennekes" plug after the company that designed it) is the standard AC charging plug in Europe, also used in India. In AC charging the charger only supplies mains; the vehicle's <strong>on-board charger (OBC)</strong> converts it to DC for the battery.</p>
+<table>
+<thead>
+<tr>
+<th>Pin</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>N</td>
+<td>Neutral</td>
+</tr>
+<tr>
+<td>PE</td>
+<td>Protective earth</td>
+</tr>
+<tr>
+<td>CP</td>
+<td>Control pilot: the charger's ±12 V, 1 kHz PWM signal. The vehicle changes its level to report its state (A–F, see "The layers" above)</td>
+</tr>
+<tr>
+<td>PP</td>
+<td>Proximity pilot: a resistor between PP and PE, inside the plug, tells the vehicle the cable's current rating</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Power:</strong> single-phase up to about 7.4 kW (32 A at 230 V); three-phase 22 kW at 32 A, up to 43 kW at 63 A.</li>
+<li><strong>The current limit, on the pilot:</strong> the duty cycle tells the vehicle how much AC current it may draw. From 6 to 51 A, current = duty cycle % × 0.6 A, so 50 % means 30 A. A <strong>5 %</strong> duty cycle means "digital communication required": that's how DC charging starts.</li>
+<li><strong>The cable rating, on PP:</strong> 1.5 kΩ = 13 A · 680 Ω = 20 A · 220 Ω = 32 A · 100 Ω = 63 A.</li>
+</ul>
+<p><strong>CCS2 = Type 2 + two DC pins.</strong> The same upper part (CP, PP, PE and the AC pins), with two large DC pins (DC+ and DC−) added below. For DC charging the AC pins aren't used, while CP, PP and PE are shared. So a full CCS2 inlet also takes a Type 2 AC plug, if the vehicle has an on-board charger. my trucks do charge on AC through their CCS2 ports, and each port's EV charge controller handles the AC session too. The on-board charger and its ECU aren't on my SCALEXIO rig; the restbus simulates it for AC tests . For AC, the current limit comes from the pilot's duty cycle, or from ISO 15118 messages; DIN 70121 is DC only.</p>
+<p><strong>On a HIL :</strong> the rig emulates both signals: it generates the pilot's PWM at a chosen duty cycle and switches the PP resistance, so tests can cover every state, current limit and cable rating without a real charger.</p>
+<h3>DIN SPEC 70121 vs ISO 15118</h3>
+<p><strong>DIN SPEC 70121</strong> is a German specification for DC charging communication, published in 2012 and revised in 2014, when ISO 15118 wasn't ready yet. Its current version is DIN/TS 70121:2024 (details below). <strong>ISO 15118</strong> ("Road vehicles: vehicle to grid communication interface") is the full international standard, in parts: -1 use cases, <strong>-2</strong> the protocol (2014), <strong>-3</strong> the PLC link, <strong>-10</strong> the single-pair Ethernet link, <strong>-20</strong> the second-generation protocol (2022).</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>DIN SPEC 70121</th>
+<th>ISO 15118-2</th>
+<th>ISO 15118-20</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Published</td>
+<td>2012, revised 2014; now DIN/TS 70121:2024</td>
+<td>2014</td>
+<td>2022</td>
+</tr>
+<tr>
+<td>Charging</td>
+<td>DC only</td>
+<td>AC and DC</td>
+<td>AC and DC, plus wireless and automated connection (e.g. pantographs); bidirectional</td>
+</tr>
+<tr>
+<td>Security (TLS = Transport Layer Security)</td>
+<td>none (no TLS)</td>
+<td>TLS</td>
+<td>TLS 1.3 mandatory</td>
+</tr>
+<tr>
+<td>Who pays / is authorised</td>
+<td>external only: RFID card or app</td>
+<td>adds <strong>Plug &amp; Charge</strong>: a certificate in the vehicle authorises the session</td>
+<td>Plug &amp; Charge</td>
+</tr>
+<tr>
+<td>Grid features</td>
+<td>none</td>
+<td>smart-charging schedules</td>
+<td>bidirectional power transfer (vehicle-to-grid)</td>
+</tr>
+<tr>
+<td>MCS</td>
+<td>no</td>
+<td>no</td>
+<td>yes, over -10's Ethernet</td>
+</tr>
+<tr>
+<td>Today</td>
+<td>the fallback nearly every DC charger still supports</td>
+<td>the mainstream for CCS</td>
+<td>the new generation; not backward compatible with -2, so it's negotiated at supportedAppProtocol</td>
+</tr>
+</tbody>
+</table>
+<h3>DIN SPEC 70121 in detail</h3>
+<p>*</p>
+<p><strong>Full title:</strong> <em>Electromobility: digital communication between a d.c. EV charging station and an electric vehicle for control of d.c. charging in the Combined Charging System.</em> Published in 2012 and revised in 2014; the current version is <strong>DIN/TS 70121:2024</strong>.</p>
+<p><strong>Why it exists:</strong> carmakers needed DC fast charging on CCS before ISO 15118 was finished. DIN published a quick "SPEC" (a specification, faster to agree than a full standard) based on the ISO 15118-2 draft, cut down to DC only.</p>
+<p><strong>What's in it:</strong>
+- <strong>Transport:</strong> PLC (HomePlug Green PHY) on the control pilot, paired by SLAC; IPv6 and TCP on top. <strong>No TLS</strong>, so the messages travel unencrypted.
+- <strong>Encoding:</strong> XML-schema messages, sent in <strong>EXI</strong> (Efficient XML Interchange), a compact binary form of XML.
+- <strong>Scope:</strong> DC only. Authorisation only by external means (card or app: <strong>EIM</strong>). No Plug &amp; Charge, no smart-charging schedules.
+- <strong>Messages:</strong> supportedAppProtocol → SessionSetup → ServiceDiscovery → ServicePaymentSelection → ContractAuthentication → ChargeParameterDiscovery → CableCheck → PreCharge → PowerDelivery → CurrentDemand (repeated) → PowerDelivery → WeldingDetection → SessionStop. Every request has a response timeout, and a missed one ends the session.</p>
+<p><strong>Why it still matters:</strong> nearly every CCS DC charger speaks it, so vehicles keep it as the fallback when ISO 15118 can't be agreed at supportedAppProtocol.</p>
+<p><strong>How it's tested:</strong> <strong>DIN SPEC 70122 (2018)</strong> defines the conformance tests: an abstract test suite for a system under test that implements either the EVCC or the SECC side. A HIL testing an EVCC plays the SECC side of those tests.</p>
+<h3>A DC charging session, step by step (DIN 70121 / ISO 15118-2 message names)</h3>
+<ol>
+<li><strong>Plug in:</strong> PP detects the plug; the pilot goes to state B with a 5 % duty cycle.</li>
+<li><strong>Link up:</strong> SLAC pairs the PLC modems (CCS); SDP finds the charger's address.</li>
+<li><strong>supportedAppProtocol:</strong> agree on DIN 70121 or ISO 15118.</li>
+<li><strong>SessionSetup → ServiceDiscovery → authorisation</strong> (external, or Plug &amp; Charge).</li>
+<li><strong>ChargeParameterDiscovery:</strong> both sides exchange limits: maximum voltage, current and power, and the battery's state.</li>
+<li><strong>CableCheck:</strong> the charger tests the cable's insulation at voltage.</li>
+<li><strong>PreCharge:</strong> the charger raises its output to the battery's voltage, so the contactors can close without a current surge.</li>
+<li><strong>PowerDelivery (start) → CurrentDemand loop:</strong> the vehicle keeps requesting voltage and current; the charger reports what it's delivering.</li>
+<li><strong>PowerDelivery (stop) → WeldingDetection</strong> (checks the contactors really opened) <strong>→ SessionStop.</strong></li>
+</ol>
+<p>The vehicle's charging contactors switch at steps 7 and 9. On my rig, the EVCCs control the charging hardware , so that's where those commands would go.</p>
+<h3>On my rig</h3>
+<p>Three EV charge controllers, one per port (left CCS2, right CCS2, MCS), command two DC charge boxes and a megawatt charging unit over CAN FD; AC charging goes through the same CCS2 ports, with the restbus playing the on-board charger; a DS5366 Advanced simulates the charging station. Full description: <strong><a href="stories.html#STAR-16">STAR-16</a></strong>.</p>
+<p><strong>Two links, don't mix them up:</strong>
+- <strong>Inside the truck:</strong> EVCC ↔ charging hardware, over CAN FD .
+- <strong>Outside the truck:</strong> EVCC ↔ the charger's SECC, over PLC on CCS or 10BASE-T1S Ethernet on MCS ( the standards).</p>
+<h3>Testing it on a HIL</h3>
+<p>The HIL plays the charger. It generates the control pilot (the PWM and the state voltages) and the proximity signal, and emulates the SECC with a PLC modem or a charging-communication emulator for CCS, or Ethernet for MCS. Voltages and currents are scaled down. Test points:
+- every session step, and its timeout;
+- wrong or missing charge parameters;
+- a failed cable check or pre-charge;
+- a lost pilot mid-charge (the state changes);
+- protocol negotiation, including the fallback to DIN 70121;
+- the CAN FD links between the EVCCs and the charging hardware: contactor commands and their feedback.</p>
+<p><strong>The DS5366 ( from dSPACE):</strong> the DS5366 is an isolated interface between the HIL and the ECU, talks to the simulator over CAN FD (with USB and Ethernet for protocol traces), and ships with a Simulink model, ControlDesk layouts and a DBC. It simulates charging stations under ISO 15118, DIN 70121, CHAdeMO and GB/T, injects communication errors, and supports Plug &amp; Charge with TLS and certificates. The Advanced version adds stronger TLS crypto and is the one getting new ISO 15118-20 features. my unit (which I configured with the dSPACE India and dSPACE Germany teams and the German HIL team, as a group exercise) has megawatt charging built in; dSPACE's public DS5366 pages don't mention MCS, so that's my first-hand account.</p>
+<p><em>"Charging is two conversations. Inside the truck, three EV charge controllers, one per port (left and right CCS2, and MCS), command the charging hardware, the DC charge boxes and a megawatt charging unit, over CAN FD. Outside, the EV charge controller talks to the charger's SECC under DIN 70121 or ISO 15118: over powerline on the control pilot for CCS, over single-pair Ethernet for MCS. On a HIL, the rig plays the charger and walks the session step by step, including the faults. On ours, a dSPACE DS5366 Advanced plays the charging station, and the restbus plays the on-board charger."</em></p></article><article class="note" id="k24"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">Automotive radar (77 GHz FMCW) + radar vs ultrasonic</span></h2><h3>1. How FMCW radar works</h3>
+<p><strong>FMCW = frequency-modulated continuous wave.</strong> The radar transmits a <strong>chirp</strong>: a signal whose frequency rises steadily, e.g. from 76 to 77 GHz in tens of microseconds. The echo is the same chirp, delayed by the round trip.</p>
+<table>
+<thead>
+<tr>
+<th>It measures</th>
+<th>How</th>
+<th>Rule of thumb</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Range</strong></td>
+<td>Mix the outgoing chirp with the echo. Because the frequency is ramping, the delayed echo is at a slightly lower frequency; the difference (the <strong>beat frequency</strong>) is proportional to distance. An FFT turns beat frequencies into <strong>range bins</strong>.</td>
+<td>Range resolution = c / (2 × bandwidth): 1 GHz → 15 cm; 4 GHz (77–81 GHz) → ~4 cm.</td>
+</tr>
+<tr>
+<td><strong>Relative speed</strong></td>
+<td>A moving target shifts the echo's <strong>phase</strong> a little from chirp to chirp (Doppler). A second FFT across many chirps gives the speed. Result: a <strong>range-Doppler map</strong>.</td>
+<td>Speed comes <strong>directly</strong>, in one frame: radar's big advantage.</td>
+</tr>
+<tr>
+<td><strong>Angle</strong></td>
+<td>Several receive antennas (often a MIMO "virtual array") hear the echo with slightly different phases; the phase difference gives the direction.</td>
+<td>Angular resolution is limited by antenna size: typically a few degrees. <strong>Radar's weak point</strong> vs camera or LiDAR.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>From signal to objects:</strong> range-Doppler-angle data → <strong>CFAR</strong> detection (a threshold that adapts to the local noise, so the false-alarm rate stays constant) → clustering → <strong>tracking</strong> (usually a Kalman filter: confirm a target over several frames, predict it, drop it when it disappears) → an <strong>object list</strong>: range, speed, angle, RCS, existence probability.</p>
+<p><strong>RCS (radar cross-section):</strong> how "bright" a target looks to radar, in m². A truck is huge, a person is about 1 m², a corner reflector is built to a known RCS. Detection range depends on RCS: small targets are seen later.</p>
+<p><strong>Output to the ECU:</strong> an <strong>object list</strong> over <strong>CAN FD</strong> (the common case) or detections / a point cloud over <strong>automotive Ethernet</strong> (higher bandwidth). Messages usually carry end-to-end protection (<strong>CRC + alive counter</strong>) so the receiver can spot corrupted or frozen data.</p>
+<h3>2. Why radar is the fog sensor, and where it's weak</h3>
+<ul>
+<li><strong>Fog, dust, darkness:</strong> a 77 GHz wave is <strong>~4 mm</strong> long; fog droplets are <strong>micrometres</strong>. Particles much smaller than the wavelength barely scatter it. So radar sees through fog and dust where the camera loses contrast and LiDAR is scattered.</li>
+<li><strong>Weak points:</strong></li>
+<li><strong>Poor angular resolution:</strong> two objects close together can merge; hard to say which lane a target is in far away.</li>
+<li><strong>Poor classification:</strong> it sees "something with this range, speed and RCS", not "a person" or "a rock".</li>
+<li><strong>Stationary objects:</strong> the world is full of stationary returns (walls, signs, berms, bridges). With weak elevation resolution a radar can't easily tell an overhead structure from a stopped vehicle, so many trackers <strong>de-prioritise stationary targets</strong>. That matters for <strong>static obstacles on a haul road</strong>: test it explicitly. Newer <strong>4D imaging radars</strong> add elevation and help.</li>
+<li><strong>Heavy rain and wet snow</strong> attenuate somewhat; <strong>mud, ice or dust caked on the radome</strong> attenuates a lot.</li>
+</ul>
+<p><strong>Deeper :</strong>
+- <strong>Scattering vs size:</strong> particles much smaller than the wavelength barely scatter it (Rayleigh: roughly size⁶ / wavelength⁴); particles the size of the wavelength or bigger scatter strongly.</p>
+<table>
+<thead>
+<tr>
+<th>Wave</th>
+<th>Wavelength</th>
+<th>vs a fog droplet (~1–20 µm)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Visible light (camera)</td>
+<td>~0.0005 mm</td>
+<td>droplet <strong>bigger</strong> → strong scattering → contrast lost</td>
+</tr>
+<tr>
+<td>LiDAR (905 / 1550 nm)</td>
+<td>~0.001 mm</td>
+<td>droplet <strong>bigger</strong> → false points, lost range</td>
+</tr>
+<tr>
+<td>Radar 77 GHz</td>
+<td>~4 mm</td>
+<td>droplet <strong>~1000× smaller</strong> → almost no effect</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Rain is different:</strong> raindrops are 1–5 mm, close to the radar wavelength, so heavy rain does attenuate and road spray adds clutter. Mine dust is mostly fine, so radar passes through it. The worst case is <strong>on the sensor</strong>: wet mud or ice on the radome.</li>
+<li><strong>Angle, worked example:</strong> 2° at 80 m ≈ 2.8 m, so two objects side by side can merge into one blob; the camera separates them easily.</li>
+<li><strong>Why stationary targets get filtered:</strong> when the truck moves, everything stationary (walls, berms, road, gantries, a boulder) appears to approach at the truck's own speed; with weak vertical resolution the radar can't tell an overhead structure from a stopped vehicle, so trackers de-prioritise stationary targets unless they were seen moving. <strong>A boulder or a broken-down dumper on a haul road is exactly that case</strong> → explicit JD "static obstacles" scenario with a detection-range criterion. Worth asking whether ARi's radar is a 4D imaging radar.</li>
+</ul>
+<h3>3. Failure modes in a mine (each one = a test case)</h3>
+<table>
+<thead>
+<tr>
+<th>Failure</th>
+<th>What happens</th>
+<th>What the radar or system should do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Multipath off pit walls</strong></td>
+<td>The echo bounces wall → target → radar: a <strong>ghost target</strong> at the wrong place, or a real one at the wrong range.</td>
+<td>Tracker plausibility; test near walls specifically.</td>
+</tr>
+<tr>
+<td><strong>Clutter</strong> (berms, rough road, walls)</td>
+<td>Many returns; tune CFAR too low and you get false alarms, too high and you miss targets.</td>
+<td>Measure <strong>false alerts per hour</strong> and <strong>detection rate</strong> per condition; agree both in the acceptance criteria.</td>
+</tr>
+<tr>
+<td><strong>Blind curves</strong></td>
+<td>Radar is line of sight: it can't see round a pit-wall bend (multipath occasionally does, unreliably).</td>
+<td>A known limit: the system must not claim coverage it doesn't have; alert timing on curves is its own scenario.</td>
+</tr>
+<tr>
+<td><strong>Radome blockage</strong> (mud, dust, ice)</td>
+<td>Signal attenuated; range drops or the radar goes blind.</td>
+<td>The radar's <strong>blockage detection</strong> reports degraded/blind → driver warning, degraded mode.</td>
+</tr>
+<tr>
+<td><strong>Misalignment</strong> (vibration shifts the bracket)</td>
+<td>Angle error: objects placed in the wrong lane or missed.</td>
+<td><strong>Alignment monitoring</strong> (radars estimate their own misalignment from stationary targets) + a static re-alignment with a reflector after install or repair .</td>
+</tr>
+<tr>
+<td><strong>Interference</strong> (other trucks' radars in the band)</td>
+<td>Raised noise floor or ghost targets.</td>
+<td>Built-in interference mitigation; test with a second radar running.</td>
+</tr>
+<tr>
+<td><strong>Communication fault</strong> (CAN timeout, frozen counter, bad CRC)</td>
+<td>Old or corrupt objects.</td>
+<td>Receiver detects it (timeout / alive counter / CRC) → treat radar as unavailable → safe state. Same test as the ADAS-request timeout at Daimler (<a href="stories.html#STAR-04">STAR-04</a>).</td>
+</tr>
+<tr>
+<td><strong>Power dip / reset</strong></td>
+<td>Radar reboots; seconds with no data.</td>
+<td>Detected as unavailable; warning; recovery tested.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Deeper :</strong>
+- <strong>Multipath:</strong> the path radar → pit wall → target → radar is longer, so the target looks <strong>farther away, or at a false position mirrored in the wall</strong>. <strong>Ground bounce</strong> makes a target seem to fade in and out with distance. Test near walls with a known target.
+- <strong>Clutter and the threshold (CFAR) trade-off:</strong> too low → berms and rough road trigger false alerts (drivers stop trusting it: a safety failure too); too high → small or dark targets missed. So the acceptance criteria need <strong>both</strong> numbers per condition, e.g. "person-sized target detected by X m in 99 % of runs" <strong>and</strong> "at most Y false alerts per hour".
+- <strong>Blind curves:</strong> the system must not claim coverage it doesn't have; this is where GNSS maps and vehicle-to-vehicle messages would help.
+- <strong>Radome blockage:</strong> the radar notices it's no longer getting its usual background echoes and reports blocked/degraded. Test with a mud-like layer: reported within the specified time, driver warned, safe degradation.
+- <strong>Communication faults: three checks in the receiving ECU:</strong> <strong>timeout</strong> (no message in time), <strong>frozen alive counter</strong> (stale data still arriving), <strong>bad CRC</strong> (corrupt data). Any one → "radar unavailable" → warning + safe state. = the ADAS-request timeout test I run on the HIL (<a href="stories.html#STAR-04">STAR-04</a>).
+- <strong>Power dip:</strong> test the <strong>recovery</strong> as well as the failure.</p>
+<h3>4. How a Quality Lead validates it</h3>
+<ol>
+<li><strong>Installation (Vehicle Inspection Checklist):</strong> mounting position, height and angle per spec; bracket stiff enough for vibration; <strong>nothing metallic in front</strong>, and no metallic paint on the radome/bumper; alignment with a reflector at a measured position; sealed connectors; supply and ground; CAN FD termination; software/calibration version recorded.</li>
+<li><strong>Bench / HIL :</strong></li>
+<li><strong>Object-list injection:</strong> feed synthetic radar objects on CAN FD into the fusion/edge ECU: tests the logic, cheap, repeatable.</li>
+<li><strong>Over-the-air radar target simulator:</strong> receives the chirp and sends it back delayed and Doppler-shifted, so the <strong>real radar</strong> sees a synthetic target at a chosen range, speed and RCS: tests radar + ECU together.</li>
+<li><strong>Replay:</strong> recorded field data played back after every software change (regression).</li>
+<li><strong>Track:</strong> <strong>corner reflectors</strong> of known RCS at measured distances: maximum detection range, range/speed/angle error, time to first detection, two close targets (separation), a static obstacle, a moving one.</li>
+<li><strong>Site (NMDC):</strong> fog vs clear days on the same route, time-synchronised logs of radar objects, camera and GNSS, and every alert.</li>
+<li><strong>Fault injection (see §3):</strong> cover the radome, rotate the bracket a few degrees, pull the CAN connector, corrupt the alive counter, dip the supply, run a second radar. For each: <strong>expected detection, reaction, safe state and time</strong>.</li>
+<li><strong>Metrics for the acceptance criteria:</strong> detection probability vs range (per target size), <strong>false alerts per hour</strong>, range/speed/angle accuracy, detection latency, availability in fog.</li>
+</ol>
+<p><strong>Validation layers: test each thing at the cheapest level that can prove it :</strong></p>
+<table>
+<thead>
+<tr>
+<th>Level</th>
+<th>What it is</th>
+<th>What it proves</th>
+<th>Limit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Object-list injection</td>
+<td>Synthetic radar objects on CAN FD into the fusion/edge ECU</td>
+<td>The <strong>logic</strong>: alert decisions, timeouts, fallback, radar-camera disagreement</td>
+<td>Doesn't test the radar</td>
+</tr>
+<tr>
+<td>Radar target simulator (over the air)</td>
+<td>Receives the real radar's chirp, returns it <strong>delayed</strong> (range), <strong>frequency-shifted</strong> (speed), at a set strength (RCS)</td>
+<td>Real radar + ECU, repeatable, dangerous scenarios included</td>
+<td>Simple targets, not a messy mine</td>
+</tr>
+<tr>
+<td>Replay</td>
+<td>Recorded field data after every software change</td>
+<td>Regression</td>
+<td>Only recorded situations</td>
+</tr>
+<tr>
+<td>Track with corner reflectors</td>
+<td>Known RCS at measured distances; a controlled vehicle</td>
+<td>Detection range, accuracy, time to first detection, close targets, static + moving</td>
+<td>No real fog</td>
+</tr>
+<tr>
+<td>Site (NMDC)</td>
+<td>Real route, fog vs clear days</td>
+<td>Real performance; the customer sees it</td>
+<td>Fog not on demand; slow, costly</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Accuracy reference:</strong> reflector positions, or GNSS/RTK on the target vehicle. <strong>Availability</strong> = % of time the radar is healthy, in fog and dust.</p>
+<p><strong>Evidence trail NMDC signs:</strong> scenario → test case → logged result (time-synchronised radar, camera, GNSS + video) → pass/fail against the agreed criterion → any failure in the defect register with root cause and fix.</p>
+<h3>4a. Radar alignment with a reflector, step by step</h3>
+<p><strong>Why:</strong> the radar's own "straight ahead" (its <strong>boresight</strong>, 0°) must match the direction the truck actually drives (its <strong>thrust line</strong>). Lateral error = distance × tan(angle): <strong>1° is ~0.9 m at 50 m and ~1.75 m at 100 m</strong>, enough to put an obstacle in the wrong lane or outside the corridor.</p>
+<p><strong>Why a corner reflector:</strong> three metal plates at right angles (a trihedral) send the wave straight back to wherever it came from, over a wide range of angles. So it's a strong, point-like target of <strong>known RCS</strong> that stands out from everything else in the bay.</p>
+<p><strong>Static alignment (the usual workshop method):</strong>
+1. <strong>Prepare the vehicle:</strong> level floor, specified tyre pressures and load, suspension settled, wheel alignment correct (the thrust line is defined by the rear axle). No metal objects in the beam path.
+2. <strong>Find the vehicle's reference line:</strong> from the wheel-alignment rig, or by marking the centreline on the floor (plumb lines, lasers from the wheel hubs).
+3. <strong>Place the reflector</strong> at the specified distance and height, on the centreline (or a specified offset), square to the thrust line: positioned with lasers and tape, often to millimetres.
+4. <strong>Run the alignment routine</strong> with the diagnostic tool (typically a UDS RoutineControl, 0x31: <a href="knowledge.html#k8">see notes</a>). The radar measures the reflector's angle, horizontally and, on some units, vertically.
+5. <strong>Correct:</strong> a small error (typically within a degree or so) is stored as an <strong>electronic offset</strong>; a large one means <strong>adjusting the bracket screws</strong> and measuring again.
+6. <strong>Verify and record:</strong> re-measure, clear fault codes, record the measured angle, tolerance, tool, person and date.</p>
+<p><strong>Vertical alignment matters too:</strong> aimed too high it looks over low obstacles; too low it sees the road as clutter. Often checked with an inclinometer on the bracket.</p>
+<p><strong>Dynamic alignment / online monitoring:</strong> driving past stationary objects (posts, walls), the radar knows every stationary target's Doppler should equal vehicle speed × cos(angle). If the pattern is skewed, it estimates its own misalignment, corrects small drifts and sets a fault code beyond a limit.</p>
+<p><strong>On a mining retrofit (Quality Lead view):</strong> vibration and knocks make re-checks a must. Put alignment in the Vehicle Inspection Checklist with a tolerance and the measured value; define the <strong>re-check triggers</strong> (after install, bracket or bumper repair, any impact, and at a maintenance interval); and prove it with an accuracy test: reflectors at known lateral offsets, compare reported positions. A retrofit may not have an OEM routine: agree the supplier's tool, fixture and tolerance up front.</p>
+<p><strong>my link:</strong> the same rule as <a href="stories.html#STAR-12">STAR-12</a> at Tata: confirm every sensor reads the truth against a known reference before any test counts.</p>
+<h3>5. Radar + camera together</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Radar</th>
+<th>Camera</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Range and speed</td>
+<td>strong, direct</td>
+<td>weak (estimated)</td>
+</tr>
+<tr>
+<td>Fog, dust, night</td>
+<td>largely unaffected</td>
+<td>degrades most</td>
+</tr>
+<tr>
+<td>What the object is</td>
+<td>weak</td>
+<td>strong</td>
+</tr>
+<tr>
+<td>Lateral position / lane</td>
+<td>weak</td>
+<td>strong</td>
+</tr>
+<tr>
+<td>Static objects</td>
+<td>tricky (often filtered)</td>
+<td>sees them, if visible</td>
+</tr>
+</tbody>
+</table>
+<p><strong>When they disagree</strong>, the rule must be written down and tested: e.g. radar sees an object the camera doesn't (fog) → warn on radar; camera sees one the radar filtered out as stationary → warn on camera. my own integration guide states the same idea: "path distance = minimum of <em>trusted</em> ranges; disagreement → cap speed" (<a href="stories.html#STAR-14">STAR-14</a>; planned, not active on my one-sensor build).</p>
+<p><strong>Disagreement rules , written down, tested, part of the acceptance evidence:</strong>
+- Radar sees it, camera doesn't (fog) → <strong>warn on radar</strong> (the camera is the one known to be blind).
+- Camera sees it, radar doesn't (stationary object filtered, clear weather) → <strong>warn on camera</strong>.
+- One sensor unhealthy → degraded mode, driver warned, limits made clear.
+- Both unsure → the more cautious reaction, e.g. cap speed.</p>
+<h3>6. Radar vs ultrasonic: similarities and differences</h3>
+<p><strong>Similar:</strong> both are <strong>active</strong> sensors: they send a wave, listen for the echo and work out distance from it. Both need thresholds and filtering against noise and false echoes; both have blind zones and are sensitive to mounting and dirt; both report health (timeouts / blockage). The ideas on my chassis map one-to-one: health grading ↔ radar blockage diagnostics; the gap between sensor pings to avoid cross-talk ↔ radar interference; hysteresis and the 5-frame confirm ↔ CFAR + track confirmation; the jump filter ↔ tracker gating.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Ultrasonic (e.g. HC-SR04)</th>
+<th>Automotive radar (77 GHz FMCW)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Wave</td>
+<td><strong>Sound</strong>, ~40 kHz, 343 m/s</td>
+<td><strong>Radio</strong>, 76–81 GHz, speed of light</td>
+</tr>
+<tr>
+<td>How range is measured</td>
+<td><strong>Time of flight</strong> of a pulse (the echo pulse width: ~58 µs per cm)</td>
+<td><strong>Beat frequency</strong> of a chirp (the time is too short to time directly: 1 m ≈ 6.7 ns round trip)</td>
+</tr>
+<tr>
+<td>Typical range</td>
+<td>~2 cm to 4–5 m</td>
+<td>up to ~200–300 m</td>
+</tr>
+<tr>
+<td>Speed</td>
+<td>Not measured (only from successive distances)</td>
+<td><strong>Measured directly</strong> (Doppler)</td>
+</tr>
+<tr>
+<td>Angle</td>
+<td>Wide cone, no angle; needs several sensors and trilateration</td>
+<td>Angle from the antenna array (a few degrees)</td>
+</tr>
+<tr>
+<td>Targets per reading</td>
+<td>First echo only</td>
+<td>Many targets at once</td>
+</tr>
+<tr>
+<td>Update rate</td>
+<td>Slow: up to ~30 ms per ping, and sensors must take turns</td>
+<td>~20–50 ms per frame, all targets</td>
+</tr>
+<tr>
+<td>Weather and environment</td>
+<td>Speed of sound changes ~0.17 % per °C; wind; <strong>loud noise</strong> (air-brake hiss on trucks) can cause false echoes; soft or angled surfaces absorb or deflect sound</td>
+<td>Largely unaffected by fog, dust, dark, noise; hurt by radome dirt and heavy rain</td>
+</tr>
+<tr>
+<td>Output</td>
+<td>Raw pulse (HC-SR04) or distance over LIN/CAN (automotive park sensors)</td>
+<td>Processed <strong>object list</strong> over CAN FD, or detections over Ethernet</td>
+</tr>
+<tr>
+<td>Use</td>
+<td>Low speed: parking, close manoeuvring, around a stationary truck</td>
+<td>Driving speed: ACC, AEB, collision warning, blind spot</td>
+</tr>
+<tr>
+<td>Cost</td>
+<td>Very low</td>
+<td>Much higher</td>
+</tr>
+</tbody>
+</table>
+<p><strong>On a haul truck:</strong> ultrasonics could cover the <strong>close zone around a stationary truck at start-up</strong> (people or light vehicles in the blind spot); radar covers the <strong>haul road</strong> ahead in fog.</p>
+<h3>7. my answers</h3>
+<p><strong>"You haven't worked with radar, have you?" (30 s):</strong></p>
+<blockquote>
+<p>"Not hands-on. My ADAS work is on the vehicle side of the chain: what the truck does with the adaptive-cruise or emergency-braking request, including when it times out. But I know how I'd validate a radar here. Install and align it properly first, because a bracket that shifts with vibration puts objects in the wrong place. Then test the failure modes that matter in a mine: multipath off pit walls, dust on the radome, stationary obstacles the tracker might filter out, and the radar dropping off the bus. Each with a pass criterion, like false alerts per hour and detection range in fog."</p>
+</blockquote></article><article class="note" id="k25"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">Automotive camera: how it works, fog, failure modes, validation</span></h2><h3>1. How an automotive camera works</h3>
+<p><strong>The chain:</strong> lens → image sensor → image signal processor (ISP) → video link → perception software → objects → decision.</p>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>What it does</th>
+<th>What matters for validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Lens</strong></td>
+<td>Field of view: wide (e.g. ~120° for near-field) vs narrow (~30–50° for long range).</td>
+<td>Wider = sees more, but each object covers fewer pixels, so it's detected later.</td>
+</tr>
+<tr>
+<td><strong>Image sensor</strong> (CMOS)</td>
+<td>Pixels collect light for a short <strong>exposure</strong> time. Automotive sensors: typically 1–8 MP, <strong>HDR</strong> (~120 dB+, to see a dark tunnel and bright sky in one frame), <strong>LED flicker mitigation</strong> (LED lights pulse; a short exposure can catch them "off").</td>
+<td>Rolling vs global shutter: a <strong>rolling shutter</strong> reads rows one after another, so fast motion or vibration skews the image.</td>
+</tr>
+<tr>
+<td><strong>ISP</strong></td>
+<td>Turns raw sensor data into a usable image: demosaicing (colour), exposure and white-balance control, HDR merging, noise reduction, lens-distortion correction.</td>
+<td>ISP settings change what the perception sees; they're part of the configuration under test.</td>
+</tr>
+<tr>
+<td><strong>Video link</strong></td>
+<td>Raw video is far too heavy for CAN, so it travels over a <strong>SerDes link (GMSL or FPD-Link)</strong>, gigabits per second on one coax, to the edge computer . A "smart camera" does the perception inside and sends an <strong>object list</strong> over CAN FD or Ethernet instead.</td>
+<td>Link loss, dropped or frozen frames must be detected: frame counters and timestamps.</td>
+</tr>
+<tr>
+<td><strong>Perception</strong></td>
+<td><strong>Classical</strong> vision (colour/edge thresholds, like my HSV chassis) or, in production, <strong>neural networks (CNNs)</strong> that detect and classify objects (person, vehicle, rock), find drivable area or road edges, and estimate distance.</td>
+<td>A neural network is only as good as its <strong>training data</strong>: a model trained on city roads may miss mine objects (domain shift).</td>
+</tr>
+<tr>
+<td><strong>Tracking + output</strong></td>
+<td>Confirm objects over several frames, predict motion, estimate range (mono camera: from size/position, weak; stereo: from the difference between two views, better).</td>
+<td>Distance from a single camera is an estimate, and poor far away: radar does range better .</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Frame rate:</strong> typically 30 fps, i.e. a new image every ~33 ms. Latency chain: exposure → readout → ISP → link → inference (often tens of ms) → tracking (confirming over N frames adds N × 33 ms) → decision → HMI.</p>
+<h3>2. Why fog hurts cameras, and what helps</h3>
+<ul>
+<li><strong>Physics:</strong> fog droplets (~1–20 µm) are much bigger than visible-light wavelengths (~0.5 µm), so they <strong>scatter</strong> light strongly .</li>
+<li><strong>Two effects:</strong> light from the object is scattered away (<strong>attenuation</strong>), and ambient light scattered towards the camera adds a bright veil (<strong>airlight</strong>). Both <strong>reduce contrast</strong>; colours wash out (saturation drops).</li>
+<li><strong>At night:</strong> the truck's own headlights <strong>backscatter</strong> off the fog into the camera (like high beams in fog), and oncoming headlights cause <strong>glare/blooming</strong>.</li>
+<li><strong>Dust</strong> behaves like fog; <strong>rain drops on the lens</strong> blur the image; <strong>low sun</strong> saturates it.</li>
+<li><strong>What helps:</strong> HDR and good exposure control; lens heaters and cleaning (washer, air jet); image <strong>dehazing</strong> algorithms (help a little, can't create lost information); and <strong>thermal (LWIR, 8–14 µm) cameras</strong>: longer wavelength, less scattering, and they see heat (people, engines, tyres) with no light needed. Thermal is a common choice for fog and night; worth asking whether Fog Safe Navigation uses one.</li>
+</ul>
+<h3>3. Failure modes in a mine (each one = a test case)</h3>
+<table>
+<thead>
+<tr>
+<th>Failure</th>
+<th>What happens</th>
+<th>What the camera or system should do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Lens dirty</strong> (dust, mud, water drops)</td>
+<td>Blurred or blocked view; detection drops silently</td>
+<td><strong>Blockage / soiling detection</strong> (image sharpness, unchanged regions) → warning → degraded mode; cleaning system; inspection-checklist item</td>
+</tr>
+<tr>
+<td><strong>Lens fogging / condensation</strong> (temperature swings)</td>
+<td>Hazy image from the inside</td>
+<td>Heater; detect low contrast → degraded</td>
+</tr>
+<tr>
+<td><strong>Glare</strong> (low sun, oncoming headlights)</td>
+<td>Saturated areas, missed objects</td>
+<td>HDR; detect saturation → confidence down</td>
+</tr>
+<tr>
+<td><strong>Night / low light</strong></td>
+<td>Noise, motion blur, low contrast</td>
+<td>Minimum-light spec in the ODD; illumination; thermal</td>
+</tr>
+<tr>
+<td><strong>Vibration</strong></td>
+<td>Motion blur; rolling-shutter skew; <strong>extrinsic calibration drift</strong> (the camera's angle shifts, so distances and positions are wrong)</td>
+<td>Stiff mount; online calibration monitoring; re-calibration triggers (like radar alignment, <a href="knowledge.html#k24">see notes</a>)</td>
+</tr>
+<tr>
+<td><strong>Frozen or dropped frames</strong></td>
+<td>The ECU keeps acting on an old image</td>
+<td><strong>Frame counter + timestamp check</strong> → "camera unavailable" → safe state. Same pattern as the ADAS-request timeout at Daimler (<a href="stories.html#STAR-04">STAR-04</a>) and the missing vision timeout on my chassis (<a href="stories.html#STAR-14">STAR-14</a>)</td>
+</tr>
+<tr>
+<td><strong>Link loss</strong> (SerDes cable, connector)</td>
+<td>Black frames or no frames</td>
+<td>Link diagnostics → fault → safe state</td>
+</tr>
+<tr>
+<td><strong>Overheating</strong> (sun on a dark cab, hot edge box)</td>
+<td>Noise rises, sensor or computer throttles</td>
+<td>Temperature monitoring; test at the site's max temperature</td>
+</tr>
+<tr>
+<td><strong>Model misses</strong> (domain shift, unusual objects, dust-covered vehicles)</td>
+<td>Confident but wrong: nothing looks broken</td>
+<td>Data coverage per ODD condition; per-condition metrics; <strong>never the only path to a safety reaction</strong> (pair with radar)</td>
+</tr>
+<tr>
+<td><strong>False detections</strong> (shadows, dust clouds, reflections)</td>
+<td>Nuisance alerts; drivers stop trusting it</td>
+<td>False alerts per hour in the acceptance criteria</td>
+</tr>
+</tbody>
+</table>
+<h3>4. How a Quality Lead validates a camera</h3>
+<ol>
+<li><strong>Installation (Vehicle Inspection Checklist):</strong> mount position and angle per spec; field of view not blocked (mirrors, bull bar, antenna); rigid bracket; cleaning and heater working; sealed connectors; SerDes cable routing and strain relief; supply and ground; software, model and calibration versions recorded.</li>
+<li><strong>Calibration :</strong> <strong>intrinsic</strong> (lens: focal length, distortion) usually done by the supplier with a checkerboard; <strong>extrinsic</strong> (position and angle on the truck) with a target board at a measured position. Verify with an accuracy test: known objects at known positions → reported positions within tolerance. Re-check after any knock or repair.</li>
+<li><strong>Bench / HIL :</strong></li>
+<li><strong>Object-list injection</strong> into the fusion/decision logic.</li>
+<li><strong>Video injection:</strong> recorded or synthetic video fed into the edge computer in place of the camera (raw data level).</li>
+<li><strong>Camera-in-the-loop:</strong> the real camera looks at a monitor or projector showing the scene (a "camera box").</li>
+<li><strong>Replay</strong> of a fixed regression set after <strong>every model or software update</strong>.</li>
+<li><strong>Track:</strong> targets of each class (person, light vehicle, dumper, rock) at measured distances; day, night, low sun; artificial fog or smoke where possible, with a <strong>visibility meter</strong> recording the actual visibility.</li>
+<li><strong>Site (NMDC):</strong> fog, dust, rain, night on the real route; time-synchronised logs (camera, radar, GNSS, video, every alert) with measured visibility.</li>
+<li><strong>Fault injection:</strong> cover the lens partly and fully, spray water or dust, freeze the frame, drop frames, unplug the link, heat the camera, shine a bright light into it. For each: expected detection, reaction, safe state and time.</li>
+<li><strong>Metrics for the acceptance criteria, per condition (visibility band, day/night, dust):</strong> <strong>detection rate (recall)</strong> and <strong>precision</strong> per object class; <strong>detection range</strong>; <strong>false alerts per hour</strong>; <strong>latency</strong> from object appearing to alert; position/distance accuracy; <strong>availability</strong> (% time healthy).</li>
+<li><strong>Configuration control:</strong> model version, ISP settings and calibration fixed per test run; any change → re-run the regression set.</li>
+</ol>
+<p><strong>A key point for a head:</strong> a camera perception result is only valid <strong>for the conditions it was tested in</strong>. So the acceptance report states results per visibility band, and the ODD states where the system hands back to the driver.</p>
+<h3>5. Camera + radar (+ thermal)</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Camera</th>
+<th>Radar</th>
+<th>Thermal camera</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>What the object is</td>
+<td>strong</td>
+<td>weak</td>
+<td>good (heat shape)</td>
+</tr>
+<tr>
+<td>Lateral position / road edges</td>
+<td>strong</td>
+<td>weak</td>
+<td>medium</td>
+</tr>
+<tr>
+<td>Range and speed</td>
+<td>weak (estimated)</td>
+<td>strong</td>
+<td>weak</td>
+</tr>
+<tr>
+<td>Fog / dust</td>
+<td>degrades most</td>
+<td>largely unaffected</td>
+<td>better than visible</td>
+</tr>
+<tr>
+<td>Night</td>
+<td>weak without light</td>
+<td>unaffected</td>
+<td>strong</td>
+</tr>
+</tbody>
+</table>
+<p>Disagreement rules: <a href="knowledge.html#k24">see notes</a>. The camera's strength is <strong>what and where</strong> (and the haul-road edges for a safe corridor); radar's is <strong>how far and how fast, in any weather</strong>.</p>
+<h3>6. my own camera work (, bound its limits)</h3>
+<ul>
+<li><strong><a href="stories.html#STAR-20">STAR-20</a> (Daimler):</strong> owned the verification side of an in-house camera-based tell-tale detection tool: every new tell-tale on the cluster captured by the camera, saved as evidence against its PROVEtec test step, and compared with a reference image for a pass/fail verdict. <strong>HMI verification, not ADAS perception.</strong></li>
+<li><strong><a href="stories.html#STAR-14">STAR-14</a> (hobby):</strong> OV3660 on an ESP32-CAM → PC OpenCV <strong>HSV colour detection</strong> with blob size/position checks, 5-frame confirmation, MQTT to the controller; vision advisory; calibrated under indoor light only; no neural network; front camera only sensor forward.</li>
+<li><strong>What they show:</strong> hands-on with exposure/colour/threshold effects, frame confirmation, and advisory-vs-safety architecture. <strong>What they don't:</strong> production perception models, automotive camera calibration, SerDes links.</li>
+</ul>
+<h3>7. my answers</h3>
+<p><strong>"What's your camera experience?" (30 s):</strong></p>
+<blockquote>
+<p>"Two pieces, both honest in scope. At Daimler I led tell-tale verification on instrument clusters, with a camera-based detection tool we built in-house. And on my own chassis, a camera with colour detection that stops at a red light. Neither is production ADAS perception. What they taught me is how much a camera depends on light and contrast, which is exactly the fog problem. So for Fog Safe Navigation I'd validate it per visibility band, pair it with radar, and never let it be the only path to a warning."</p>
+</blockquote></article><article class="note" id="k27"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">SAE J3016 levels of driving automation + the ODD</span></h2><p>There are <strong>six</strong> levels, 0 to 5. People because Level 0 means no automation. Three questions separate them: <strong>who steers and controls speed, who watches the road, and who handles the fallback.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Level</th>
+<th>Name</th>
+<th>The car does</th>
+<th>The human does</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>No driving automation</td>
+<td>Warns, or steps in for a moment</td>
+<td>Drives the whole time</td>
+<td>Lane-departure warning, <strong>AEB</strong> (active safety, not Level 1)</td>
+</tr>
+<tr>
+<td>1</td>
+<td>Driver assistance</td>
+<td>Steering <strong>or</strong> speed</td>
+<td>Drives, watches, is the fallback</td>
+<td>ACC alone, or lane-keep alone</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Partial automation</td>
+<td>Steering <strong>and</strong> speed</td>
+<td><strong>Still watches</strong> and takes over instantly</td>
+<td>ACC + lane centring</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Conditional automation</td>
+<td>Drives <strong>and watches</strong>, within limits</td>
+<td>Takes over <strong>when asked</strong> (takeover request)</td>
+<td>Mercedes Drive Pilot</td>
+</tr>
+<tr>
+<td>4</td>
+<td>High automation</td>
+<td>Drives, watches <strong>and handles its own fallback</strong> (a minimal risk manoeuvre), within its ODD</td>
+<td>Not needed inside the ODD</td>
+<td>Waymo robotaxis</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Full automation</td>
+<td>Everything, everywhere a human could drive</td>
+<td>Passenger</td>
+<td>Nobody commercially</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The two lines that matter:</strong>
+- Between <strong>Levels 2 and 3</strong>, monitoring moves to the car.
+- Between <strong>Levels 3 and 4</strong>, the <strong>fallback</strong> moves to the car. At Level 4 there's nobody to hand back to, so the controllers themselves must detect faults and reach a safe state. That's why validation gets so much harder at Level 4 .</p>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>What it actually means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ODD (operational design domain)</td>
+<td>The conditions a system is designed for: road types, speed, weather, time of day, geography. Levels 3 and 4 only work inside it; Level 5 has no ODD limit</td>
+</tr>
+<tr>
+<td>DDT fallback</td>
+<td>Who responds when the system fails or leaves its ODD: the human up to Level 3, the system at Levels 4 and 5</td>
+</tr>
+<tr>
+<td>Takeover request</td>
+<td>Level 3: the system asks the driver to take over, with a warning time. If nobody responds, it performs a minimal risk manoeuvre</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>that AEB is Level 1 (it's Level 0);</li>
+</ul></article><article class="note" id="k28"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">The AV safety layer: doer/checker, fault detection, reaction ladder, standards</span></h2><ul>
+<li><em><a href="stories.html#STAR-04">STAR-04</a>: the ACC acceleration-request timeout.</em></li>
+<li><em><a href="stories.html#STAR-06">STAR-06</a>: CRC, counter and timeout FuSa tests.</em></li>
+<li><em><a href="stories.html#STAR-14">STAR-14</a>: the ESP32 chassis, where the camera only</em> requests <em>a stop and the controller latches it.</em></li>
+<li><em><a href="stories.html#STAR-02">STAR-02</a> and <a href="stories.html#STAR-11">STAR-11</a>: power and grounding faults.</em></li>
+</ul>
+<h3>1. The chain</h3>
+<pre><code class="language-text">SENSORS -&gt; high-performance computer: perception -&gt; localisation -&gt; planner (RL) -&gt; SAFETY CONTROLLER -&gt; drive-by-wire ECUs -&gt; actuators
+           (GPU, Linux, many processes over IPC) envelope check, (CAN / CAN FD) steering, brake,
+                                                                         owns the safe stop throttle / e-drive
+           &lt;-------- feedback: wheel speeds, steering angle, brake pressure, IMU -------- + a watchdog in both directions
+</code></pre>
+<p><strong>Why the safety layer is separate (the "doer / checker" pattern):</strong>
+1. <strong>An RL policy can't be fully specified or verified, but a rule can.</strong> "Never more than X°/s of steering at Y km/h", or "planner silent for 100 ms → stop", can be written down and tested.
+2. <strong>The big computer is the part most likely to fail</strong> (Linux, GPUs, heat), so the part that can stop the vehicle can't live on it.
+3. <strong>The planner proposes; the safety layer decides.</strong></p>
+<p>The safety layer also needs its own sensing (wheel speeds, IMU) and its own power, or one fault takes out both. Mobileye's RSS is one published example of a checker.</p>
+<h3>2. Detecting faults, link by link (sized to the FTTI)</h3>
+<table>
+<thead>
+<tr>
+<th>Link</th>
+<th>Fault</th>
+<th>Detected by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sensor → computer</td>
+<td>Dead or unplugged</td>
+<td>Timeout: no new frames</td>
+</tr>
+<tr>
+<td></td>
+<td><strong>Wrong but alive</strong> (glare, dirt)</td>
+<td>Cross-checks between sensors, plausibility ranges, frozen values (<strong>SOTIF territory</strong>)</td>
+</tr>
+<tr>
+<td>Inside the computer</td>
+<td>A process crashes or freezes; stale data; a cycle overruns</td>
+<td>Heartbeats and a supervisor; timestamps with a maximum age; execution-time monitoring</td>
+</tr>
+<tr>
+<td>Computer → safety controller</td>
+<td>Commands stop, or arrive corrupted, repeated, out of order or unsafe</td>
+<td>A timeout; <strong>E2E</strong> CRC + counter + data ID ; an <strong>envelope check</strong>; a <strong>window or question-and-answer watchdog</strong></td>
+</tr>
+<tr>
+<td>Safety controller → ECUs</td>
+<td>Bus failure</td>
+<td>Bus-off, error counters, a timeout in each ECU</td>
+</tr>
+<tr>
+<td>ECU → actuator</td>
+<td>The actuator doesn't follow</td>
+<td><strong>Commanded vs measured</strong> (steering angle, deceleration), with the gap held for N ms</td>
+</tr>
+<tr>
+<td>Power</td>
+<td>A dip or brownout</td>
+<td>Undervoltage monitoring; a separate supply for the safety controller</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The FTTI decides the timeouts.</strong> The FTTI (ISO 26262) runs from a fault to possible harm, and detection <strong>plus</strong> reaction must fit inside it. Example: at 30 km/h a vehicle covers about 8 m/s. If a bad steering command would leave the lane in 300 ms, detecting and reacting must take less than 300 ms. Tuning a timeout is the debounce trade-off: a short one is fast but trips falsely; a long one is robust but slow.</p>
+<p><strong>Watchdogs:</strong>
+- A <strong>simple watchdog</strong> catches a total hang, but not a computer stuck in a loop that keeps kicking it.
+- A <strong>window watchdog</strong> (the kick must come neither too early nor too late) or a <strong>question-and-answer watchdog</strong> (the computer must answer a challenge) also catches a computer that's alive but running wrong. That's the usual choice for safety controllers.</p>
+<h3>3. Reacting: the ladder, by what still works</h3>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>When</th>
+<th>What</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Log + warn</td>
+<td>A redundant item is lost</td>
+<td>Record it; tell the operator</td>
+</tr>
+<tr>
+<td><strong>Degraded</strong></td>
+<td>Capability is reduced but still enough</td>
+<td>Cap the speed; widen the margins</td>
+</tr>
+<tr>
+<td><strong>MRM: pull over</strong></td>
+<td>Perception still works</td>
+<td>Reach the shoulder and stop</td>
+</tr>
+<tr>
+<td><strong>MRM: stop in lane</strong></td>
+<td>The planner or main computer is lost</td>
+<td>Follow the last valid path and brake, hazards on</td>
+</tr>
+<tr>
+<td><strong>Brake-only stop</strong></td>
+<td>Steering is lost</td>
+<td>Brake in a straight line</td>
+</tr>
+<tr>
+<td><strong>Backup-brake stop</strong></td>
+<td>The primary brake is weak</td>
+<td>Use the redundant brake, regenerative braking or the parking brake</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Rules:</strong>
+- <strong>Latch the stop.</strong> Release it only on a confirmed restart, with the vehicle stopped and the fault clear.
+- <strong>Fixed priority:</strong> safety layer over operator over planner.
+- <strong>Log everything around a fault</strong>, so every field stop becomes a bench test.</p>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>What it actually means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FTTI (fault tolerant time interval)</td>
+<td>ISO 26262: the time from a fault to possible harm. Detection and the reaction to a safe state must both fit inside it</td>
+</tr>
+<tr>
+<td>MRM (minimal risk manoeuvre)</td>
+<td>The action that takes the vehicle to a minimal risk condition, e.g. stop in lane or pull over (SAE J3016)</td>
+</tr>
+<tr>
+<td>MRC (minimal risk condition)</td>
+<td>The end state: stable, stopped, or at least not putting anyone at risk</td>
+</tr>
+<tr>
+<td>Doer / checker</td>
+<td>A complex function (the doer, e.g. an RL planner) whose every output is checked by a simple, verifiable monitor (the checker) that can override it</td>
+</tr>
+<tr>
+<td>Window watchdog</td>
+<td>A watchdog that faults if the kick comes too late <strong>or too early</strong>, so a computer stuck in a fast loop is caught</td>
+</tr>
+<tr>
+<td>Question-and-answer watchdog</td>
+<td>The monitor sends a challenge, and the monitored computer must return the right answer in time. That proves it's computing correctly, not just alive</td>
+</tr>
+<tr>
+<td>Fail-safe</td>
+<td>On a fault, stopping is safe enough (low speed, off-road, closed sites)</td>
+</tr>
+<tr>
+<td>Fail-operational</td>
+<td>On a fault, the system must keep working long enough to reach a safe place (highway speed). Needs redundant power, steering, braking and compute</td>
+</tr>
+<tr>
+<td>Commanded vs measured</td>
+<td>Comparing what the controller asked an actuator for with what it achieved (angle, deceleration). A gap held for N ms is an actuator fault</td>
+</tr>
+</tbody>
+</table>
+<h3>4. Standards, one line each</h3>
+<table>
+<thead>
+<tr>
+<th>Standard</th>
+<th>Covers</th>
+<th>my level</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>ISO 21448 (SOTIF)</strong></td>
+<td>Hazards <strong>without a fault</strong>: limited sensing, wrong decisions. Aims to shrink the unknown unsafe scenarios</td>
+<td>Concept</td>
+</tr>
+<tr>
+<td><strong>UL 4600</strong></td>
+<td>The <strong>safety case</strong> (claims → arguments → evidence) for vehicles with no driver</td>
+<td>Concept</td>
+</tr>
+<tr>
+<td><strong>ISO/PAS 8800</strong> (2024)</td>
+<td>Safety of AI/ML components in road vehicles</td>
+<td>Name and purpose only</td>
+</tr>
+<tr>
+<td><strong>SAE J3016</strong></td>
+<td>Levels, the ODD, the MRC</td>
+<td></td>
+</tr>
+<tr>
+<td><strong>UNECE R157</strong></td>
+<td>Level 3 automated lane keeping (takeover requests, MRM)</td>
+<td>Concept</td>
+</tr>
+<tr>
+<td><strong>UNECE R155 / R156</strong></td>
+<td>Cybersecurity management / software updates, including OTA</td>
+<td>Concept</td>
+</tr>
+<tr>
+<td><strong>ASPICE</strong></td>
+<td>Process maturity</td>
+<td>SYS.4/SYS.5 practitioner</td>
+</tr>
+</tbody>
+</table>
+<p><strong>ISO 26262 vs SOTIF in one line:</strong> a lost CAN message is ISO 26262 territory (timeouts, CRC and watchdogs catch it). A camera that misses a pedestrian in glare, or a planner that misjudges a new situation, is SOTIF territory (cross-checks, the envelope check and scenario testing catch it).</p>
+<ul>
+<li>that you've worked with SOTIF, UL 4600, ISO/PAS 8800, R157 or R155/R156;</li>
+<li>ASIL ratings for another company's functions;</li>
+<li>that India mandates any of these for AVs (not checked).</li>
+</ul></article></main>
+<footer class="site"><div class="wrap">&copy; 2026 Ketan Bakshi · Automotive V&amp;V · Bangalore</div></footer>
+</body></html>

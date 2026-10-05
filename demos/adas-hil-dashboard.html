@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ADAS HIL 01 · HIL status</title>
+<style>
+:root{
+  --bg:#f3f5f8;--panel:#fff;--ink:#16191d;--muted:#5f6873;--faint:#8a939d;--line:#e1e5ea;
+  --ok:#17834f;--ok-bg:#e2f4ea;--warn:#8f5d00;--warn-bg:#fdf0d5;--bad:#c0261a;--bad-bg:#fde3e0;
+  --off:#6b7480;--off-bg:#eceff2;--accent:#1f4f8f;--shadow:0 1px 2px rgba(16,24,40,.06);
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f1215;--panel:#181c20;--ink:#e8eaed;--muted:#a1aab4;--faint:#77808a;--line:#2a3036;
+  --ok:#5ad49a;--ok-bg:#12301f;--warn:#f3c66b;--warn-bg:#352a10;--bad:#ff8b80;--bad-bg:#3b1714;
+  --off:#9aa3ad;--off-bg:#252a30;--accent:#8db6f0;--shadow:none}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 "Segoe UI",system-ui,-apple-system,Roboto,sans-serif}
+main{max-width:1280px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:22px;margin:0;letter-spacing:-.01em}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 12px;font-weight:600}
+code,.mono{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;font-size:12px}
+.muted{color:var(--muted)}.faint{color:var(--faint);font-size:12px}
+.top{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:18px}
+.top .right{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.sub{color:var(--muted);font-size:13px;margin-top:2px}
+button{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--ink);
+  border-radius:8px;padding:7px 12px;cursor:pointer;min-height:36px}
+button:hover{border-color:var(--accent)}button:disabled{opacity:.6;cursor:wait}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.pill.big{font-size:15px;padding:6px 16px}
+.ok{color:var(--ok);background:var(--ok-bg)}.warn{color:var(--warn);background:var(--warn-bg)}
+.bad{color:var(--bad);background:var(--bad-bg)}.off{color:var(--off);background:var(--off-bg)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:var(--shadow)}
+.kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-bottom:16px}
+@media (max-width:980px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:520px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow)}
+.kpi .v{font-size:22px;font-weight:650;margin-top:2px;font-variant-numeric:tabular-nums}
+.kpi .l{font-size:12px;color:var(--muted)}
+.kpi.ok .v{color:var(--ok)}.kpi.warn .v{color:var(--warn)}.kpi.bad .v{color:var(--bad)}
+.kpi.ok,.kpi.warn,.kpi.bad{background:var(--panel)}
+.row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:16px;margin-bottom:16px}
+@media (max-width:860px){.row2{grid-template-columns:1fr}}
+.actions{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.actions li{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;padding:10px 12px;border-radius:8px;background:var(--bg)}
+.actions .dot{width:9px;height:9px;border-radius:50%;margin-top:6px;background:currentColor}
+.actions b{font-weight:600}
+/* topology */
+.topo{display:grid;grid-template-columns:150px 1fr;gap:0;align-items:stretch}
+@media (max-width:560px){.topo{grid-template-columns:1fr}.rigbox{margin-bottom:10px}.lane{border-left:0!important;padding-left:0!important}}
+.rigbox{border:2px solid var(--accent);border-radius:10px;padding:12px;display:flex;flex-direction:column;justify-content:center;gap:4px}
+.rigbox b{color:var(--accent)}
+.lanes{display:grid;gap:10px;padding-left:16px}
+.lane{border-left:3px solid var(--line);padding-left:14px;position:relative}
+.lane::before{content:"";position:absolute;left:-19px;top:14px;width:16px;border-top:3px solid var(--line)}
+.lane .name{font-size:12px;color:var(--muted);margin-bottom:6px}
+.nodes{display:flex;flex-wrap:wrap;gap:8px}
+.node{border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:flex;align-items:center;gap:8px;background:var(--panel)}
+.node .sw{width:10px;height:10px;border-radius:3px}
+.node.unknown{border-style:dashed}
+.sw.ok{background:var(--ok)}.sw.warn{background:var(--warn)}.sw.bad{background:var(--bad)}.sw.off{background:var(--off)}
+/* ECU cards */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-bottom:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:var(--shadow);display:flex;flex-direction:column}
+.card .bar{height:4px}
+.bar.ok{background:var(--ok)}.bar.warn{background:var(--warn)}.bar.bad{background:var(--bad)}.bar.off{background:var(--off)}
+.card .head{display:flex;gap:12px;align-items:center;padding:14px 14px 10px}
+.icon{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;background:var(--bg);color:var(--accent);flex:none}
+.icon svg{width:24px;height:24px}
+.card .title{min-width:0;flex:1}.card .title b{display:block;font-size:15px}
+.card dl{margin:0;padding:0 14px 12px;display:grid;grid-template-columns:auto 1fr;gap:6px 12px}
+.card dt{color:var(--muted);font-size:12px;padding-top:1px}.card dd{margin:0;overflow-wrap:anywhere}
+.card .foot{margin-top:auto;padding:10px 14px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.mis{color:var(--warn);font-weight:600;white-space:nowrap}
+.was{display:block;color:var(--faint);text-decoration:line-through;white-space:nowrap}
+.src{font-size:11px;color:var(--faint);margin-left:6px}
+/* tables */
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:12px;color:var(--muted);font-weight:600}
+tr:last-child td{border-bottom:0}
+td.okc{color:var(--ok);font-weight:600}td.misc{color:var(--warn);font-weight:600}
+/* history */
+.hist{display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;align-items:center}
+.cells{display:flex;gap:3px;flex-wrap:nowrap;overflow:hidden;justify-content:flex-end}
+.cell{width:12px;height:16px;border-radius:3px;flex:none}
+.cell.ok{background:var(--ok)}.cell.warn{background:var(--warn)}.cell.bad{background:var(--bad)}.cell.off{background:var(--off)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;gap:6px;align-items:center}
+.stale{color:var(--bad);font-weight:600}
+footer{margin-top:20px;color:var(--faint);font-size:12px}
+/* tabs */
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px;overflow-x:auto}
+.tabs button{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;color:var(--muted);
+  padding:10px 14px;white-space:nowrap;font-weight:600}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.tabs button .n{margin-left:6px;font-size:11px;padding:1px 7px;border-radius:999px}
+/* stacked bars */
+.stack{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--off-bg);gap:2px}
+.stack.big{height:26px;border-radius:8px}
+.stack i{display:block;height:100%}
+.s-PASS{background:var(--ok)}.s-FAIL{background:var(--bad)}.s-BLOCKED{background:var(--warn)}.s-NOT_RUN{background:var(--off)}
+.stack i+i{border-left:0}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px}
+.covrow{display:grid;grid-template-columns:90px 1fr 80px;gap:10px;align-items:center;margin-bottom:10px;font-size:13px}
+.covrow .num{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
+.c-VERIFIED{background:var(--ok)}.c-FAILED{background:var(--bad)}.c-PARTIAL{background:var(--warn)}
+.c-NOT_EXECUTED{background:var(--off)}.c-NO_TEST{background:transparent;border:1px dashed var(--faint)}
+.filters{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.filters button{min-height:30px;padding:4px 10px;font-size:12px}
+.filters button[aria-pressed=true]{border-color:var(--accent);color:var(--accent)}
+/* heat matrix */
+table.heat td,table.heat th{text-align:center}
+table.heat td:first-child,table.heat th:first-child{text-align:left}
+.hc{display:inline-grid;place-items:center;min-width:34px;height:28px;border-radius:6px;font-weight:600;font-variant-numeric:tabular-nums}
+.h0{color:var(--faint)}.h1{background:var(--bad-bg);color:var(--bad)}.h2{background:color-mix(in srgb,var(--bad) 45%,var(--bad-bg));color:#fff}
+.h3{background:var(--bad);color:#fff}
+/* clusters */
+.clusters{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;margin-bottom:16px}
+.cluster{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:var(--shadow)}
+.cluster .top2{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:8px}
+.cluster .size{font-size:26px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.cluster .sig{font-weight:600;margin:2px 0 8px}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.tag{font-size:11px;padding:2px 8px;border-radius:6px;background:var(--bg);color:var(--muted)}
+.cluster ul{margin:6px 0 0;padding-left:18px;font-size:12px;color:var(--muted)}
+.why{font-size:12px;margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--warn-bg);color:var(--warn)}
+.section{margin-bottom:16px}
+</style>
+</head>
+<body>
+<main>
+  <header class="top">
+    <div><h1 id="rig"></h1><div class="sub" id="sub"></div></div>
+    <div class="right">
+      <span id="ago" class="faint"></span>
+      <button id="refresh" hidden>Re-check now</button>
+      <span id="overall" class="pill big"></span>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs" role="tablist">
+    <button role="tab" data-view="bench">Bench readiness</button>
+    <button role="tab" data-view="campaign">Campaign status</button>
+    <button role="tab" data-view="coverage">Coverage</button>
+    <button role="tab" data-view="defects">Defect clustering</button>
+  </nav>
+
+  <div class="view" id="view-campaign" hidden>
+    <section class="kpis" id="c-kpis"></section>
+    <section class="panel section"><h2>Execution</h2><div id="c-bar"></div><div class="legend" id="c-legend"></div></section>
+    <section class="panel section"><h2>By feature</h2><div class="tw"><table id="c-feat"></table></div></section>
+    <p class="faint">Visibility for the test manager. Nothing here signs a release off automatically.</p>
+  </div>
+
+  <div class="view" id="view-coverage" hidden>
+    <section class="kpis" id="v-kpis"></section>
+    <section class="row2">
+      <div class="panel"><h2>By feature</h2><div id="v-feat"></div></div>
+      <div class="panel"><h2>By ASIL</h2><div id="v-asil"></div></div>
+    </section>
+    <section class="panel section"><h2>Requirements</h2>
+      <div class="filters" id="v-filters"></div>
+      <div class="tw"><table id="v-reqs"></table></div></section>
+  </div>
+
+  <div class="view" id="view-defects" hidden>
+    <section class="kpis" id="d-kpis"></section>
+    <section class="panel section"><h2>Failures by feature × ECU</h2><div class="tw"><table class="heat" id="d-heat"></table></div></section>
+    <h2>Clusters <span class="faint" style="text-transform:none;letter-spacing:0">grouped by defect ID, or by failure signature with numbers masked</span></h2>
+    <section class="clusters" id="d-clusters"></section>
+  </div>
+
+  <div class="view" id="view-bench">
+  <section class="kpis" id="kpis"></section>
+
+  <section class="row2">
+    <div class="panel"><h2>Action needed</h2><ul class="actions" id="actions"></ul></div>
+    <div class="panel"><h2>Bench topology</h2><div class="topo" id="topo"></div></div>
+  </section>
+
+  <h2>ECUs on the bench</h2>
+  <section class="cards" id="cards"></section>
+
+  <section class="panel section"><h2>Software baseline vs inventory</h2><div class="tw"><table id="baseline"></table></div></section>
+
+  <section class="panel section" id="histPanel"><h2>History</h2><div class="hist" id="hist"></div>
+    <div class="legend"><span><i class="cell ok"></i>OK</span><span><i class="cell warn"></i>Version mismatch / not probed</span>
+    <span><i class="cell bad"></i>Not powered / no response / error</span></div></section>
+  </div>
+
+  <footer id="foot"></footer>
+</main>
+
+<script id="data" type="application/json">{"status": {"rig_name": "ADAS HIL 01", "backend": "sim", "timestamp": "2026-10-05T15:40:24+05:30", "inventory_file": "config\\..\\data\\ecu_inventory.txt", "overall": "FAIL", "rig": {"simulation_state": "RUNNING", "application": "virtual ADAS bench (no hardware)", "kl30_voltage_v": 13.5, "kl15": "ON"}, "bus": {"interface": "virtual", "channel": "adas_hil_sim_18a6d110440", "state": "ACTIVE", "responders": ["0x7EA", "0x7EB", "0x7EE"]}, "ecus": [{"name": "ADAS_ECU", "ecu_type": "ADAS domain controller", "transport": "doip", "address": "DoIP 127.0.0.1:51509 LA 0x1010", "state": "OK", "powered": true, "supply_current_a": 0.85, "response_ms": 0.2, "expected": {"sw_version": "ADAS_SW_07.02.01", "hw_version": "HW_C2"}, "actual": {"sw_version": "ADAS_SW_07.02.01", "hw_version": "HW_C2", "serial_number": "SNAE8CC9C0"}, "mismatches": [], "detail": "versions read over UDS", "extra": {"bus": "Automotive Ethernet (DoIP)"}, "connected": true}, {"name": "FRONT_CAMERA", "ecu_type": "Mono front camera", "transport": "can", "address": "CAN 0x7E2/0x7EA", "state": "VERSION_MISMATCH", "powered": true, "supply_current_a": 0.85, "response_ms": 0.4, "expected": {"sw_version": "CAM_SW_04.12.00", "hw_version": "HW_B1"}, "actual": {"sw_version": "CAM_SW_04.11.00", "hw_version": "HW_B1", "serial_number": "SN836FD860"}, "mismatches": ["sw_version: inventory 'CAM_SW_04.12.00', ECU reports 'CAM_SW_04.11.00'"], "detail": "versions read over UDS", "extra": {"bus": "CAN"}, "connected": true}, {"name": "FRONT_RADAR", "ecu_type": "Front long-range radar", "transport": "can", "address": "CAN 0x7E3/0x7EB", "state": "OK", "powered": true, "supply_current_a": 0.85, "response_ms": 0.2, "expected": {"sw_version": "RAD_SW_03.08.02", "hw_version": "HW_A3"}, "actual": {"sw_version": "RAD_SW_03.08.02", "hw_version": "HW_A3", "serial_number": "SN850A97C9"}, "mismatches": [], "detail": "versions read over UDS", "extra": {"bus": "CAN"}, "connected": true}, {"name": "LIDAR", "ecu_type": "Front LIDAR", "transport": "tcp", "address": "TCP 127.0.0.1:51510", "state": "NOT_POWERED", "powered": false, "supply_current_a": 0.0, "response_ms": null, "expected": {"sw_version": "LID_FW_2.4.1", "hw_version": "HW_REV_D"}, "actual": {}, "mismatches": [], "detail": "supply current 0.00 A < 0.30 A threshold", "extra": {"bus": "Automotive Ethernet"}, "connected": false}], "unknown_responders": ["0x7EE"], "notes": ["CAN IDs answering TesterPresent but not in the rig config: 0x7EE"], "campaign": {"meta": {"name": "ADAS SOP-2 regression", "release": "ADAS_SW_07.02.01", "planned_end": "2026-10-03", "first_execution": "2026-09-29T09:05:00", "last_execution": "2026-10-01T09:30:00"}, "status": {"total": 34, "executed": 29, "PASS": 18, "FAIL": 11, "BLOCKED": 3, "NOT_RUN": 2, "pass_rate": 62.1, "by_feature": [{"feature": "ACC", "total": 11, "PASS": 6, "FAIL": 4, "BLOCKED": 0, "NOT_RUN": 1}, {"feature": "AEB", "total": 9, "PASS": 4, "FAIL": 3, "BLOCKED": 2, "NOT_RUN": 0}, {"feature": "DIAG", "total": 4, "PASS": 3, "FAIL": 0, "BLOCKED": 1, "NOT_RUN": 0}, {"feature": "LKA", "total": 7, "PASS": 4, "FAIL": 2, "BLOCKED": 0, "NOT_RUN": 1}, {"feature": "TSR", "total": 3, "PASS": 1, "FAIL": 2, "BLOCKED": 0, "NOT_RUN": 0}]}, "coverage": {"overall": {"total": 24, "planned": 21, "executed": 18, "verified": 10, "failed": 6}, "by_feature": [{"name": "ACC", "total": 6, "planned": 5, "executed": 5, "verified": 2, "failed": 2}, {"name": "AEB", "total": 6, "planned": 6, "executed": 5, "verified": 3, "failed": 2}, {"name": "DIAG", "total": 3, "planned": 2, "executed": 2, "verified": 1, "failed": 0}, {"name": "LKA", "total": 5, "planned": 5, "executed": 4, "verified": 3, "failed": 1}, {"name": "TSR", "total": 4, "planned": 3, "executed": 2, "verified": 1, "failed": 1}], "by_asil": [{"name": "A", "total": 7, "planned": 6, "executed": 5, "verified": 3, "failed": 2}, {"name": "B", "total": 11, "planned": 10, "executed": 8, "verified": 3, "failed": 3}, {"name": "QM", "total": 6, "planned": 5, "executed": 5, "verified": 4, "failed": 1}], "requirements": [{"id": "REQ-ACC-001", "title": "Engage ACC above 30 km/h on driver request", "feature": "ACC", "asil": "B", "state": "PARTIAL", "tests": ["TC-ACC-001", "TC-ACC-002", "TC-ACC-011"]}, {"id": "REQ-ACC-002", "title": "Disengage ACC when the brake pedal is pressed", "feature": "ACC", "asil": "B", "state": "FAILED", "tests": ["TC-ACC-003", "TC-ACC-004"]}, {"id": "REQ-ACC-003", "title": "Hold the set speed within 2 km/h on a flat road", "feature": "ACC", "asil": "QM", "state": "VERIFIED", "tests": ["TC-ACC-005", "TC-ACC-006"]}, {"id": "REQ-ACC-004", "title": "Follow a lead vehicle at the selected time gap", "feature": "ACC", "asil": "A", "state": "FAILED", "tests": ["TC-ACC-007", "TC-ACC-008", "TC-ACC-009"]}, {"id": "REQ-ACC-005", "title": "Allow driver override with the accelerator", "feature": "ACC", "asil": "A", "state": "VERIFIED", "tests": ["TC-ACC-010"]}, {"id": "REQ-ACC-006", "title": "Deactivate ACC on radar blockage", "feature": "ACC", "asil": "B", "state": "NO_TEST", "tests": []}, {"id": "REQ-AEB-001", "title": "Warn at TTC 2.6 s for a stationary target", "feature": "AEB", "asil": "B", "state": "VERIFIED", "tests": ["TC-AEB-001"]}, {"id": "REQ-AEB-002", "title": "Partial braking at TTC 1.6 s", "feature": "AEB", "asil": "B", "state": "VERIFIED", "tests": ["TC-AEB-002"]}, {"id": "REQ-AEB-003", "title": "Full braking at TTC 0.9 s", "feature": "AEB", "asil": "B", "state": "FAILED", "tests": ["TC-AEB-003", "TC-AEB-004"]}, {"id": "REQ-AEB-004", "title": "Detect pedestrians with camera-radar fusion", "feature": "AEB", "asil": "B", "state": "FAILED", "tests": ["TC-AEB-005", "TC-AEB-006"]}, {"id": "REQ-AEB-005", "title": "Confirm targets with LIDAR in low light", "feature": "AEB", "asil": "B", "state": "NOT_EXECUTED", "tests": ["TC-AEB-007", "TC-AEB-008"]}, {"id": "REQ-AEB-006", "title": "Suppress AEB on driver steering evasion", "feature": "AEB", "asil": "A", "state": "VERIFIED", "tests": ["TC-AEB-009"]}, {"id": "REQ-LKA-001", "title": "Detect solid and dashed lane markings", "feature": "LKA", "asil": "A", "state": "FAILED", "tests": ["TC-LKA-001", "TC-LKA-002"]}, {"id": "REQ-LKA-002", "title": "Apply corrective torque at lane departure", "feature": "LKA", "asil": "B", "state": "VERIFIED", "tests": ["TC-LKA-003", "TC-LKA-004"]}, {"id": "REQ-LKA-003", "title": "Warn after 15 s hands-off", "feature": "LKA", "asil": "A", "state": "VERIFIED", "tests": ["TC-LKA-005"]}, {"id": "REQ-LKA-004", "title": "Suppress LKA with the indicator on", "feature": "LKA", "asil": "QM", "state": "VERIFIED", "tests": ["TC-LKA-006"]}, {"id": "REQ-LKA-005", "title": "Degrade LKA on camera blockage", "feature": "LKA", "asil": "B", "state": "NOT_EXECUTED", "tests": ["TC-LKA-007"]}, {"id": "REQ-TSR-001", "title": "Recognise speed-limit signs", "feature": "TSR", "asil": "QM", "state": "FAILED", "tests": ["TC-TSR-001", "TC-TSR-002"]}, {"id": "REQ-TSR-002", "title": "Show the recognised limit in the cluster within 1 s", "feature": "TSR", "asil": "QM", "state": "VERIFIED", "tests": ["TC-TSR-003"]}, {"id": "REQ-TSR-003", "title": "Handle supplementary signs (time and weather)", "feature": "TSR", "asil": "QM", "state": "NO_TEST", "tests": []}, {"id": "REQ-TSR-004", "title": "Feed the speed limit to ACC", "feature": "TSR", "asil": "A", "state": "NOT_EXECUTED", "tests": ["TC-ACC-011"]}, {"id": "REQ-DIAG-001", "title": "Set a DTC on sensor communication loss", "feature": "DIAG", "asil": "B", "state": "PARTIAL", "tests": ["TC-DIAG-001", "TC-DIAG-002", "TC-DIAG-003"]}, {"id": "REQ-DIAG-002", "title": "Identification DIDs readable in the default session", "feature": "DIAG", "asil": "QM", "state": "VERIFIED", "tests": ["TC-DIAG-004"]}, {"id": "REQ-DIAG-003", "title": "Set a DTC on sensor misalignment", "feature": "DIAG", "asil": "A", "state": "NO_TEST", "tests": []}]}, "defects": {"clusters": [{"key": "sig:lidar not reachable", "defect_id": "", "signature": "LIDAR not reachable", "size": 3, "statuses": {"BLOCKED": 3}, "ecus": ["LIDAR"], "features": ["AEB", "DIAG"], "requirements": ["REQ-AEB-005", "REQ-DIAG-001"], "tests": [{"id": "TC-AEB-007", "title": "Low-light car confirmed by LIDAR", "status": "BLOCKED"}, {"id": "TC-AEB-008", "title": "Low-light cyclist confirmed by LIDAR", "status": "BLOCKED"}, {"id": "TC-DIAG-003", "title": "LIDAR communication loss DTC", "status": "BLOCKED"}], "suspect_bench": true, "bench_reasons": ["LIDAR: not powered"], "needs_ticket": false}, {"key": "defect:ADAS-1042", "defect_id": "ADAS-1042", "signature": "ACC_Status stays ACTIVE after brake pedal", "size": 2, "statuses": {"FAIL": 2}, "ecus": ["ADAS_ECU"], "features": ["ACC"], "requirements": ["REQ-ACC-002"], "tests": [{"id": "TC-ACC-003", "title": "Brake pedal disengages ACC", "status": "FAIL"}, {"id": "TC-ACC-004", "title": "Brake pedal in a curve", "status": "FAIL"}], "suspect_bench": false, "bench_reasons": [], "needs_ticket": false}, {"key": "defect:ADAS-1051", "defect_id": "ADAS-1051", "signature": "Radar target dropout beyond 140 m", "size": 2, "statuses": {"FAIL": 2}, "ecus": ["FRONT_RADAR"], "features": ["ACC"], "requirements": ["REQ-ACC-004"], "tests": [{"id": "TC-ACC-008", "title": "Lead vehicle cut-out at 150 m", "status": "FAIL"}, {"id": "TC-ACC-009", "title": "Approach lead vehicle from 160 m", "status": "FAIL"}], "suspect_bench": false, "bench_reasons": [], "needs_ticket": false}, {"key": "sig:lane marking confidence below #", "defect_id": "", "signature": "Lane marking confidence below 0.4", "size": 2, "statuses": {"FAIL": 2}, "ecus": ["FRONT_CAMERA"], "features": ["LKA"], "requirements": ["REQ-LKA-001"], "tests": [{"id": "TC-LKA-001", "title": "Solid lane markings", "status": "FAIL"}, {"id": "TC-LKA-002", "title": "Dashed lane markings", "status": "FAIL"}], "suspect_bench": true, "bench_reasons": ["FRONT_CAMERA: sw_version: inventory 'CAM_SW_04.12.00', ECU reports 'CAM_SW_04.11.00'"], "needs_ticket": false}, {"key": "sig:pedestrian not fused: camera object list empty", "defect_id": "", "signature": "Pedestrian not fused: camera object list empty", "size": 2, "statuses": {"FAIL": 2}, "ecus": ["FRONT_CAMERA"], "features": ["AEB"], "requirements": ["REQ-AEB-004"], "tests": [{"id": "TC-AEB-005", "title": "Pedestrian crossing by day", "status": "FAIL"}, {"id": "TC-AEB-006", "title": "Pedestrian crossing at dusk", "status": "FAIL"}], "suspect_bench": true, "bench_reasons": ["FRONT_CAMERA: sw_version: inventory 'CAM_SW_04.12.00', ECU reports 'CAM_SW_04.11.00'"], "needs_ticket": false}, {"key": "sig:sign class not recognised", "defect_id": "", "signature": "Sign class not recognised", "size": 2, "statuses": {"FAIL": 2}, "ecus": ["FRONT_CAMERA"], "features": ["TSR"], "requirements": ["REQ-TSR-001"], "tests": [{"id": "TC-TSR-001", "title": "Speed limit 80 sign", "status": "FAIL"}, {"id": "TC-TSR-002", "title": "Speed limit 50 sign at night", "status": "FAIL"}], "suspect_bench": true, "bench_reasons": ["FRONT_CAMERA: sw_version: inventory 'CAM_SW_04.12.00', ECU reports 'CAM_SW_04.11.00'"], "needs_ticket": false}, {"key": "defect:ADAS-1060", "defect_id": "ADAS-1060", "signature": "Brake request 180 ms later than the TTC threshold", "size": 1, "statuses": {"FAIL": 1}, "ecus": ["ADAS_ECU"], "features": ["AEB"], "requirements": ["REQ-AEB-003"], "tests": [{"id": "TC-AEB-004", "title": "Full braking at 70 km/h", "status": "FAIL"}], "suspect_bench": false, "bench_reasons": [], "needs_ticket": false}], "matrix": {"features": ["ACC", "AEB", "DIAG", "LKA", "TSR"], "ecus": ["ADAS_ECU", "FRONT_CAMERA", "FRONT_RADAR", "LIDAR"], "fails": {"ACC": {"ADAS_ECU": 2, "FRONT_CAMERA": 0, "FRONT_RADAR": 2, "LIDAR": 0}, "AEB": {"ADAS_ECU": 1, "FRONT_CAMERA": 2, "FRONT_RADAR": 0, "LIDAR": 2}, "DIAG": {"ADAS_ECU": 0, "FRONT_CAMERA": 0, "FRONT_RADAR": 0, "LIDAR": 1}, "LKA": {"ADAS_ECU": 0, "FRONT_CAMERA": 2, "FRONT_RADAR": 0, "LIDAR": 0}, "TSR": {"ADAS_ECU": 0, "FRONT_CAMERA": 2, "FRONT_RADAR": 0, "LIDAR": 0}}}}, "notes": []}}, "history": [{"t": "2026-10-05T15:40:24+05:30", "overall": "FAIL", "ecus": {"ADAS_ECU": "OK", "FRONT_CAMERA": "VERSION_MISMATCH", "FRONT_RADAR": "OK", "LIDAR": "NOT_POWERED"}}], "live": false, "interval_s": 0}</script>
+<script>
+(() => {
+  let D = JSON.parse(document.getElementById("data").textContent);
+  const $ = (id) => document.getElementById(id);
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const TONE = {OK:"ok",PASS:"ok",VERSION_MISMATCH:"warn",NOT_PROBED:"warn",WARN:"warn",
+                NO_RESPONSE:"bad",NOT_POWERED:"bad",ERROR:"bad",FAIL:"bad"};
+  const LABEL = {OK:"Connected",VERSION_MISMATCH:"Version mismatch",NO_RESPONSE:"No response",
+                 NOT_POWERED:"Not powered",NOT_PROBED:"Not probed",ERROR:"Error"};
+  const tone = (s) => TONE[s] || "off";
+
+  const ICONS = {
+    camera:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h3l2-3h8l2 3h3v11H3z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+    radar:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 20V12"/><path d="M7.5 15.5a6.4 6.4 0 0 1 9 0"/><path d="M4.6 12.6a10.5 10.5 0 0 1 14.8 0"/><path d="M1.8 9.8a14.5 14.5 0 0 1 20.4 0"/></svg>',
+    lidar:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="7" y="9" width="10" height="9" rx="2"/><path d="M9 9V6h6v3"/><path d="M3 5l4 4M21 5l-4 4M2 12h3M19 12h3"/></svg>',
+    ecu:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg>',
+  };
+  const kind = (e) => {
+    const t = (e.name + " " + e.ecu_type).toLowerCase();
+    if (t.includes("lidar")) return "lidar";
+    if (t.includes("radar")) return "radar";
+    if (t.includes("cam")) return "camera";
+    return "ecu";
+  };
+  const power = (e) => e.supply_current_a == null ? '<span class="muted">not measured</span>'
+    : `${e.powered ? "ON" : "OFF"} · ${Number(e.supply_current_a).toFixed(2)} A`;
+  const link = (e) => {
+    const via = {can:"UDS on CAN",doip:"UDS on DoIP",tcp:"Ethernet",none:"power only"}[e.transport] || "-";
+    return e.response_ms == null ? `<span class="muted">${esc(via)}</span>` : `${Number(e.response_ms).toFixed(1)} ms · ${esc(via)}`;
+  };
+  const isMis = (e, f) => (e.mismatches || []).some((m) => m.startsWith(f));
+  const ver = (e, f) => {
+    const exp = e.expected[f] || "", act = e.actual[f];
+    if (act == null) return exp ? `${esc(exp)}<span class="src">from file</span>` : '<span class="muted">-</span>';
+    if (exp && isMis(e, f)) return `<span class="was">${esc(exp)} <span class="src">inventory</span></span><span class="mis">${esc(act)}</span><span class="src">on ECU</span>`;
+    return `${esc(act)}<span class="src">read live</span>`;
+  };
+
+  function actions(s) {
+    const out = [];
+    const rigState = String(s.rig.simulation_state || "");
+    if (s.rig.error) out.push(["bad", `<b>Rig backend unavailable.</b> ${esc(s.rig.error)}`]);
+    else if (rigState && !rigState.toUpperCase().includes("RUNNING"))
+      out.push(["bad", `<b>HIL simulation not running</b> (${esc(rigState)}). Start the application before testing.`]);
+    for (const e of s.ecus) {
+      const n = `<b>${esc(e.name)}</b>`;
+      if (e.state === "NOT_POWERED") out.push(["bad", `${n} has no supply current (${esc(e.detail)}). Check its power channel, fuse and harness.`]);
+      else if (e.state === "NO_RESPONSE") out.push(["bad", `${n} is powered but silent. Check bus wiring and termination, the DoIP IP/VLAN, or whether it is stuck in the bootloader. <span class="faint">${esc(e.detail)}</span>`]);
+      else if (e.state === "ERROR") out.push(["bad", `${n}: protocol error. ${esc(e.detail)}`]);
+      else if (e.state === "VERSION_MISMATCH")
+        for (const f of ["sw_version", "hw_version"]) if (isMis(e, f))
+          out.push(["warn", `${n} reports ${f === "sw_version" ? "SW" : "HW"} <code>${esc(e.actual[f])}</code>, inventory says <code>${esc(e.expected[f])}</code>. ${f === "sw_version" ? "Flash the listed release or update the inventory sheet." : "Swap the unit or correct the inventory sheet."}`]);
+      else if (e.state === "NOT_PROBED") out.push(["warn", `${n} is in the inventory but has no access entry in the rig config, so it was not checked live.`]);
+      if (e.detail && e.detail.includes("read failed")) out.push(["warn", `${n}: some identification DIDs could not be read. <span class="faint">${esc(e.detail)}</span>`]);
+    }
+    for (const id of s.unknown_responders) out.push(["warn", `Unlisted CAN node <code>${esc(id)}</code> answers diagnostics. Identify it, then add it to the config and inventory or disconnect it.`]);
+    for (const n of s.notes) if (n.includes("not in the inventory file")) out.push(["warn", esc(n)]);
+    return out;
+  }
+
+  function render() {
+    const s = D.status;
+    document.title = `${s.overall} · ${s.rig_name}`;
+    $("rig").textContent = s.rig_name;
+    $("sub").innerHTML = `backend <code>${esc(s.backend)}</code> · inventory <code>${esc(s.inventory_file.split(/[\\/]/).pop())}</code> · checked ${esc(new Date(s.timestamp).toLocaleString())}`;
+    $("overall").className = `pill big ${tone(s.overall)}`;
+    $("overall").textContent = s.overall;
+
+    const n = s.ecus.length, conn = s.ecus.filter((e) => e.connected).length;
+    const mism = s.ecus.filter((e) => e.state === "VERSION_MISMATCH").length;
+    const sim = String(s.rig.simulation_state ?? (s.rig.error ? "unavailable" : "-"));
+    const simOk = sim.toUpperCase().includes("RUNNING");
+    const kl30 = s.rig.kl30_voltage_v;
+    const bus = s.bus.state || (s.bus.error ? "error" : "-");
+    const kpis = [
+      [`${conn}/${n}`, "ECUs connected", conn === n ? "ok" : "bad"],
+      [mism, "Version mismatches", mism ? "warn" : "ok"],
+      [s.unknown_responders.length, "Unlisted CAN nodes", s.unknown_responders.length ? "warn" : "ok"],
+      [simOk ? "Running" : esc(sim), "HIL simulation", simOk ? "ok" : "bad"],
+      [kl30 == null ? "-" : `${Number(kl30).toFixed(1)} V`, `KL30 supply${s.rig.kl15 ? " · KL15 " + esc(s.rig.kl15) : ""}`, kl30 == null ? "" : (kl30 >= 11 && kl30 <= 15.5 ? "ok" : "bad")],
+      [esc(bus), "Diagnostic CAN", bus === "ACTIVE" ? "ok" : bus === "-" ? "" : "bad"],
+    ];
+    $("kpis").innerHTML = kpis.map(([v, l, t]) => `<div class="kpi ${t}"><div class="l">${l}</div><div class="v">${v}</div></div>`).join("");
+
+    const acts = actions(s);
+    $("actions").innerHTML = acts.length
+      ? acts.map(([t, h]) => `<li class="${t}" style="background:var(--bg)"><span class="dot" style="color:var(--${t})"></span><span style="color:var(--ink)">${h}</span></li>`).join("")
+      : `<li><span class="dot" style="color:var(--ok)"></span><span>Nothing to do. Every ECU is connected and matches the inventory.</span></li>`;
+
+    // topology: rig -> buses -> nodes
+    const lanes = {"Automotive Ethernet": [], "Diagnostic CAN": [], "Not configured": []};
+    for (const e of s.ecus) {
+      const lane = e.transport === "can" ? "Diagnostic CAN" : (e.transport === "doip" || e.transport === "tcp") ? "Automotive Ethernet" : "Not configured";
+      lanes[lane].push(`<span class="node" title="${esc(e.state)}"><i class="sw ${tone(e.state)}"></i>${esc(e.name)}</span>`);
+    }
+    for (const id of s.unknown_responders)
+      lanes["Diagnostic CAN"].push(`<span class="node unknown" title="not in config"><i class="sw warn"></i>${esc(id)} ?</span>`);
+    const laneHtml = Object.entries(lanes).filter(([, v]) => v.length).map(([k, v]) =>
+      `<div class="lane"><div class="name">${k}${k === "Diagnostic CAN" && s.bus.state ? " · " + esc(s.bus.state) : ""}</div><div class="nodes">${v.join("")}</div></div>`).join("");
+    $("topo").innerHTML = `<div class="rigbox"><b>dSPACE HIL</b><span class="faint">${esc(s.backend === "sim" ? "virtual bench" : "XIL API")}</span>
+      <span class="pill ${simOk ? "ok" : "bad"}" style="align-self:flex-start">${simOk ? "running" : "not running"}</span></div><div class="lanes">${laneHtml}</div>`;
+
+    $("cards").innerHTML = s.ecus.map((e) => `
+      <article class="card"><div class="bar ${tone(e.state)}"></div>
+        <div class="head"><div class="icon">${ICONS[kind(e)]}</div>
+          <div class="title"><b>${esc(e.name)}</b><span class="muted">${esc(e.ecu_type || "-")}</span></div>
+          <span class="pill ${tone(e.state)}">${esc(LABEL[e.state] || e.state)}</span></div>
+        <dl>
+          <dt>Power</dt><dd>${power(e)}</dd>
+          <dt>Link</dt><dd>${link(e)}</dd>
+          <dt>SW</dt><dd>${ver(e, "sw_version")}</dd>
+          <dt>HW</dt><dd>${ver(e, "hw_version")}</dd>
+          <dt>Serial</dt><dd class="mono">${esc(e.actual.serial_number || "-")}</dd>
+          <dt>Address</dt><dd class="mono">${esc(e.address)}</dd>
+        </dl>
+        <div class="foot">${esc(e.detail || "")}</div>
+      </article>`).join("");
+
+    const cmp = (e, f) => {
+      const exp = e.expected[f], act = e.actual[f];
+      if (act == null) return [esc(exp || "-"), '<td class="muted">not readable</td>'];
+      return [esc(exp || "-"), isMis(e, f) ? `<td class="misc">${esc(act)}</td>` : `<td class="okc">${esc(act)}</td>`];
+    };
+    $("baseline").innerHTML = `<thead><tr><th>ECU</th><th>SW in inventory</th><th>SW on ECU</th><th>HW in inventory</th><th>HW on ECU</th><th>Serial</th></tr></thead><tbody>` +
+      s.ecus.map((e) => { const [se, sa] = cmp(e, "sw_version"), [he, ha] = cmp(e, "hw_version");
+        return `<tr><td><b>${esc(e.name)}</b></td><td>${se}</td>${sa}<td>${he}</td>${ha}<td class="mono">${esc(e.actual.serial_number || "-")}</td></tr>`; }).join("") + "</tbody>";
+
+    const H = D.history.slice(-60);
+    if (H.length < 2) { $("histPanel").hidden = true; }
+    else {
+      $("histPanel").hidden = false;
+      const cell = (st, t) => `<i class="cell ${tone(st || "")}" title="${esc(new Date(t).toLocaleTimeString())} · ${esc(st || "absent")}"></i>`;
+      const rows = [["Bench", H.map((h) => cell(h.overall, h.t))]];
+      for (const e of s.ecus) rows.push([e.name, H.map((h) => cell(h.ecus[e.name], h.t))]);
+      $("hist").innerHTML = rows.map(([k, c]) => `<span class="faint">${esc(k)}</span><div class="cells">${c.join("")}</div>`).join("") +
+        `<span></span><span class="faint" style="text-align:right">last ${H.length} checks · newest on the right</span>`;
+    }
+    $("foot").textContent = "Read-only check: TesterPresent + ReadDataByIdentifier, XIL API variable reads. Never starts/stops the simulation or switches power.";
+  }
+
+  // ---------------- campaign / coverage / defects ----------------
+  const ST = ["PASS", "FAIL", "BLOCKED", "NOT_RUN"];
+  const ST_LABEL = {PASS: "Pass", FAIL: "Fail", BLOCKED: "Blocked", NOT_RUN: "Not run"};
+  const COV = ["VERIFIED", "FAILED", "PARTIAL", "NOT_EXECUTED", "NO_TEST"];
+  const COV_LABEL = {VERIFIED: "Verified", FAILED: "Failed", PARTIAL: "Partly executed", NOT_EXECUTED: "Not executed", NO_TEST: "No test"};
+  const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
+  const kpiHtml = (items) => items.map(([v, l, t]) => `<div class="kpi ${t || ""}"><div class="l">${l}</div><div class="v">${v}</div></div>`).join("");
+  const stack = (counts, total, big) => `<div class="stack${big ? " big" : ""}" role="img" aria-label="${ST.map((s) => `${ST_LABEL[s]} ${counts[s]}`).join(", ")}">` +
+    ST.filter((s) => counts[s]).map((s) => `<i class="s-${s}" style="width:${counts[s] / total * 100}%" title="${ST_LABEL[s]}: ${counts[s]}"></i>`).join("") + "</div>";
+  let reqFilter = "ALL";
+
+  function renderCampaign(c, s) {
+    const st = c.status, m = c.meta;
+    const daysLeft = m.planned_end ? Math.ceil((new Date(m.planned_end + "T23:59:59") - Date.now()) / 864e5) : null;
+    $("c-kpis").innerHTML = kpiHtml([
+      [`${st.executed}/${st.total}`, `Executed · ${esc(m.name || "campaign")}`, ""],
+      [st.pass_rate == null ? "-" : `${st.pass_rate}%`, "Pass rate (of executed)", st.pass_rate >= 90 ? "ok" : st.pass_rate >= 70 ? "warn" : "bad"],
+      [st.FAIL, "Failed", st.FAIL ? "bad" : "ok"],
+      [st.BLOCKED, "Blocked", st.BLOCKED ? "warn" : "ok"],
+      [`<span class="mono" style="font-size:14px;overflow-wrap:anywhere">${esc(m.release || "-")}</span>`, "Release under test", ""],
+      [daysLeft == null ? "-" : daysLeft < 0 ? "overdue" : `${daysLeft} d`, `To planned end${m.planned_end ? " · " + esc(m.planned_end) : ""}`, daysLeft != null && daysLeft < 0 ? "bad" : ""],
+    ]);
+    $("c-bar").innerHTML = stack(st, st.total, true) +
+      `<p class="faint" style="margin:8px 0 0">${pct(st.executed, st.total)}% executed · last result ${esc(m.last_execution ? new Date(m.last_execution).toLocaleString() : "-")}</p>`;
+    $("c-legend").innerHTML = ST.map((x) => `<span><i class="s-${x}"></i>${ST_LABEL[x]} ${st[x]}</span>`).join("");
+    $("c-feat").innerHTML = `<thead><tr><th>Feature</th><th>Tests</th><th style="width:40%">Progress</th><th>Pass</th><th>Fail</th><th>Blocked</th><th>Not run</th><th>Pass rate</th></tr></thead><tbody>` +
+      st.by_feature.map((f) => { const ex = f.PASS + f.FAIL;
+        return `<tr><td><b>${esc(f.feature)}</b></td><td>${f.total}</td><td>${stack(f, f.total)}</td><td>${f.PASS}</td><td>${f.FAIL}</td><td>${f.BLOCKED}</td><td>${f.NOT_RUN}</td><td>${ex ? pct(f.PASS, ex) + "%" : "-"}</td></tr>`; }).join("") + "</tbody>";
+
+    // coverage
+    const cv = c.coverage, o = cv.overall;
+    $("v-kpis").innerHTML = kpiHtml([
+      [`${pct(o.planned, o.total)}%`, `Planned · ${o.planned}/${o.total} requirements have a test`, o.planned === o.total ? "ok" : "warn"],
+      [`${pct(o.executed, o.total)}%`, `Executed · ${o.executed}/${o.total}`, ""],
+      [`${pct(o.verified, o.total)}%`, `Verified · ${o.verified}/${o.total} all tests pass`, o.verified === o.total ? "ok" : "warn"],
+      [o.failed, "Requirements with a failing test", o.failed ? "bad" : "ok"],
+      [o.total - o.planned, "Requirements without a test", o.total - o.planned ? "warn" : "ok"],
+    ]);
+    const covBars = (rows) => rows.map((r) => {
+      const segs = [["VERIFIED", r.verified], ["FAILED", r.failed], ["PARTIAL", r.executed - r.verified - r.failed], ["NOT_EXECUTED", r.planned - r.executed], ["NO_TEST", r.total - r.planned]];
+      return `<div class="covrow"><b>${esc(r.name === "-" ? "unrated" : r.name)}</b><div class="stack">${segs.filter(([, n]) => n > 0).map(([k, n]) => `<i class="c-${k}" style="width:${n / r.total * 100}%" title="${COV_LABEL[k]}: ${n}"></i>`).join("")}</div><span class="num">${r.verified}/${r.total} verified</span></div>`;
+    }).join("") + `<div class="legend">${COV.map((k) => `<span><i class="c-${k}"></i>${COV_LABEL[k]}</span>`).join("")}</div>`;
+    $("v-feat").innerHTML = covBars(cv.by_feature);
+    $("v-asil").innerHTML = covBars(cv.by_asil.map((r) => ({...r, name: r.name === "-" ? "-" : (r.name === "QM" ? "QM" : "ASIL " + r.name)})));
+    const counts = Object.fromEntries(COV.map((k) => [k, cv.requirements.filter((r) => r.state === k).length]));
+    $("v-filters").innerHTML = [["ALL", `All ${cv.requirements.length}`], ...COV.filter((k) => counts[k]).map((k) => [k, `${COV_LABEL[k]} ${counts[k]}`])]
+      .map(([k, l]) => `<button data-f="${k}" aria-pressed="${reqFilter === k}">${l}</button>`).join("");
+    $("v-filters").querySelectorAll("button").forEach((b) => b.onclick = () => { reqFilter = b.dataset.f; renderCampaign(D.status.campaign, D.status); });
+    const RT = {VERIFIED: "ok", FAILED: "bad", PARTIAL: "warn", NOT_EXECUTED: "off", NO_TEST: "warn"};
+    $("v-reqs").innerHTML = `<thead><tr><th>Requirement</th><th>Title</th><th>Feature</th><th>ASIL</th><th>State</th><th>Tests</th></tr></thead><tbody>` +
+      cv.requirements.filter((r) => reqFilter === "ALL" || r.state === reqFilter).map((r) =>
+        `<tr><td class="mono">${esc(r.id)}</td><td style="white-space:normal">${esc(r.title)}</td><td>${esc(r.feature)}</td><td>${esc(r.asil || "-")}</td><td><span class="pill ${RT[r.state]}">${COV_LABEL[r.state]}</span></td><td class="mono" style="white-space:normal">${r.tests.map(esc).join(", ") || "-"}</td></tr>`).join("") + "</tbody>";
+
+    // defects
+    const d = c.defects, cl = d.clusters;
+    const failing = cl.reduce((a, x) => a + x.size, 0);
+    const suspect = cl.filter((x) => x.suspect_bench);
+    $("d-kpis").innerHTML = kpiHtml([
+      [cl.length, `Clusters from ${failing} failed/blocked tests`, cl.length ? "bad" : "ok"],
+      [new Set(cl.filter((x) => x.defect_id).map((x) => x.defect_id)).size, "Linked defect tickets", ""],
+      [cl.filter((x) => x.needs_ticket).length, "Clusters that need a ticket", cl.some((x) => x.needs_ticket) ? "warn" : "ok"],
+      [`${suspect.length}`, `Suspect bench · ${suspect.reduce((a, x) => a + x.size, 0)} tests`, suspect.length ? "warn" : "ok"],
+    ]);
+    const mx = d.matrix, maxv = Math.max(1, ...mx.features.flatMap((f) => mx.ecus.map((e) => mx.fails[f][e])));
+    const sick = new Set(s.ecus.filter((e) => ["VERSION_MISMATCH", "NOT_POWERED", "NO_RESPONSE", "ERROR"].includes(e.state)).map((e) => e.name));
+    $("d-heat").innerHTML = `<thead><tr><th>Feature</th>${mx.ecus.map((e) => `<th>${esc(e)}${sick.has(e) ? ' <span class="pill warn" title="unhealthy on the bench now">bench</span>' : ""}</th>`).join("")}</tr></thead><tbody>` +
+      mx.features.map((f) => `<tr><td><b>${esc(f)}</b></td>${mx.ecus.map((e) => { const v = mx.fails[f][e]; const lvl = v === 0 ? 0 : Math.min(3, Math.ceil(v / maxv * 3));
+        return `<td><span class="hc h${lvl}" title="${esc(f)} on ${esc(e)}: ${v} failed/blocked">${v || "·"}</span></td>`; }).join("")}</tr>`).join("") + "</tbody>";
+    $("d-clusters").innerHTML = cl.length ? cl.map((x) => `
+      <article class="cluster">
+        <div class="top2"><div><div class="faint">${x.defect_id ? "Defect " + esc(x.defect_id) : "No ticket yet"}</div><div class="sig">${esc(x.signature)}</div></div>
+          <div style="text-align:right"><div class="size">${x.size}</div><div class="faint">tests</div></div></div>
+        <div class="tags">${x.suspect_bench ? '<span class="pill warn">suspect bench</span>' : x.needs_ticket ? '<span class="pill bad">needs ticket</span>' : '<span class="pill off">product defect</span>'}
+          ${x.ecus.map((e) => `<span class="tag">${esc(e)}</span>`).join("")}${x.features.map((f) => `<span class="tag">${esc(f)}</span>`).join("")}
+          ${Object.entries(x.statuses).map(([k, n]) => `<span class="tag">${ST_LABEL[k] || k} ${n}</span>`).join("")}</div>
+        <div class="faint">Requirements: <span class="mono">${x.requirements.map(esc).join(", ") || "-"}</span></div>
+        <ul>${x.tests.map((t) => `<li><span class="mono">${esc(t.id)}</span> ${esc(t.title)}</li>`).join("")}</ul>
+        ${x.suspect_bench ? `<div class="why"><b>Check the bench before raising a defect.</b> ${x.bench_reasons.map(esc).join("; ")}</div>` : ""}
+      </article>`).join("") : '<p class="muted">No failed or blocked tests.</p>';
+    return {failing, clusters: cl.length, fails: st.FAIL + st.BLOCKED};
+  }
+
+  function setView(v) {
+    const views = ["bench", "campaign", "coverage", "defects"];
+    if (!views.includes(v) || (v !== "bench" && !(D.status.campaign && !D.status.campaign.error))) v = "bench";
+    views.forEach((x) => { $("view-" + x).hidden = x !== v; });
+    document.querySelectorAll("#tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.view === v)));
+    try { if (location.hash !== "#" + v) history.replaceState(null, "", "#" + v); } catch (_) {}
+  }
+
+  function renderTabs() {
+    const c = D.status.campaign;
+    const has = c && !c.error && c.status;
+    document.querySelectorAll("#tabs button").forEach((b) => {
+      const v = b.dataset.view;
+      b.hidden = v !== "bench" && !has;
+      let badge = "";
+      if (v === "bench") badge = `<span class="n ${tone(D.status.overall)}">${D.status.overall}</span>`;
+      if (has && v === "campaign") badge = `<span class="n off">${c.status.executed}/${c.status.total}</span>`;
+      if (has && v === "coverage") badge = `<span class="n off">${pct(c.coverage.overall.verified, c.coverage.overall.total)}%</span>`;
+      if (has && v === "defects") badge = `<span class="n ${c.defects.clusters.length ? "bad" : "ok"}">${c.defects.clusters.length}</span>`;
+      b.innerHTML = {bench: "Bench readiness", campaign: "Campaign status", coverage: "Coverage", defects: "Defect clustering"}[v] + badge;
+      b.onclick = () => setView(v);
+    });
+    if (has) renderCampaign(c, D.status);
+  }
+
+  function tick() {
+    const age = Math.max(0, Math.round((Date.now() - new Date(D.status.timestamp)) / 1000));
+    const txt = age < 60 ? `${age} s ago` : age < 3600 ? `${Math.round(age / 60)} min ago` : new Date(D.status.timestamp).toLocaleString();
+    const stale = D.live && D.interval_s && age > D.interval_s * 3;
+    $("ago").innerHTML = D.live ? `${stale ? '<span class="stale">stale · </span>' : ""}updated ${txt} · every ${D.interval_s} s` : `snapshot · ${txt}`;
+  }
+
+  async function poll() {
+    try { D = await (await fetch("api/status", {cache: "no-store"})).json(); renderAll(); } catch (_) { /* keep last view; tick() shows staleness */ }
+  }
+
+  const renderAll = () => { render(); renderTabs(); };
+  renderAll(); setView(location.hash.slice(1)); tick(); setInterval(tick, 1000);
+  window.addEventListener("hashchange", () => setView(location.hash.slice(1)));
+  if (D.live) {
+    const b = $("refresh"); b.hidden = false;
+    b.onclick = async () => { b.disabled = true; b.textContent = "Checking…";
+      try { await fetch("api/refresh", {method: "POST"}); await poll(); } finally { b.disabled = false; b.textContent = "Re-check now"; } };
+    setInterval(poll, Math.max(2, D.interval_s / 2) * 1000);
+  }
+})();
+</script>
+</body>
+</html>

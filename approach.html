@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How I work · Ketan Bakshi</title><meta name="description" content="How Ketan Bakshi approaches problems, testing and AI.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=Source+Sans+3:wght@400;600;700&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="extra.css"></head>
+<body class="page-home"><header class="site"><div class="wrap">
+<span class="brand">Ketan Bakshi</span>
+<p class="tagline">Test Architect · System Integration · HIL Verification · ML Ops for V&amp;V</p>
+<div class="contact-row">
+<a href="mailto:ketan01bakshi@gmail.com">ketan01bakshi@gmail.com</a><span>Bangalore, India</span>
+<a href="https://linkedin.com/in/ketan-bakshi-b9380950" rel="noopener">LinkedIn</a>
+<a href="https://github.com/ketan01bakshi-dev" rel="noopener">GitHub</a>
+</div></div></header>
+<nav class="page-nav" aria-label="Site"><div class="wrap nav-inner"><a href="index.html">Home</a><a href="mlops.html">HIL ML Ops</a><a href="projects.html">Projects</a><a href="stories.html">Stories</a><a href="knowledge.html">Technical notes</a><a href="approach.html" class=is-active aria-current=page>How I work</a></div></nav>
+<main class="wrap"><section class="hero hero-compact"><h1>How I work</h1>
+<p class="lede">The habits behind my work: how I take on a new problem, how I test, how I use AI, and what I ask a new team. Distilled from my own notes.</p></section>
+
+<section><h2><span class="sec-num">01 /</span> <span class="sec-title">Starting on a new problem</span></h2>
+<ol class="compact"><li><strong>Name the problem first:</strong> the one business or operational problem the work exists to solve, the skills underneath the tool list, what success looks like at 90 days, and the organisation's current priorities.</li>
+<li><strong>One version of every number.</strong> I keep a ledger of every metric and claim I make, so a figure never changes between conversations.</li>
+<li><strong>Bank what I learn.</strong> Every question I'm asked, every story, every technical concept goes into a running knowledge bank, so preparation compounds instead of starting over.</li></ol></section>
+
+<section><h2><span class="sec-num">02 /</span> <span class="sec-title">How I test</span></h2>
+<ul class="compact"><li><strong>Standardise, then automate, then add AI with human gates</strong>: the derivation method first, automation on top, AI only where a human reviews the output.</li>
+<li><strong>Cheapest layer that catches the fault first:</strong> fault list → SiL in CI → log replay → a small HiL with only the real safety controller and one actuator → vehicle last.</li>
+<li><strong>Prove the tests can fail:</strong> seed bugs and check each one is caught before trusting a green run.</li>
+<li><strong>Check the bench before raising a defect:</strong> wrong software, no power or a bad harness look like product failures.</li>
+<li><strong>A new method earns its place on real work:</strong> a short, strict trial on two or three functions settles a debate faster than more meetings.</li></ul>
+<p><a href="knowledge.html#k15">My triage method</a> · <a href="knowledge.html#k16">Designing an automation framework</a> · <a href="knowledge.html#k17">Test derivation standard</a></p></section>
+
+<section><h2><span class="sec-num">03 /</span> <span class="sec-title">How I use AI</span></h2>
+<ul class="compact"><li><strong>Bounded:</strong> AI drafts specs, RCAs and documents; it never decides a verdict or signs anything off.</li>
+<li><strong>Honest about authorship:</strong> I define the problem and what "done" means; the AI tool writes much of the code; I can explain every part.</li>
+<li><strong>Demo the simplest version that makes the point;</strong> keep the advanced versions for "what would you improve?"</li></ul></section>
+
+<section><h2><span class="sec-num">04 /</span> <span class="sec-title">Ideas that transfer across domains</span></h2>
+<div class="table-wrap"><table class="data"><thead><tr><th>Move</th><th>What carries over</th></tr></thead><tbody>
+<tr><td>Automotive → medical or regulated software</td><td>Same problem: software controlling hardware, plus audit-grade evidence</td></tr>
+<tr><td>HIL → enterprise system test</td><td>Multi-configuration labs, integration defects, automation architecture</td></tr>
+<tr><td>OEM → startup</td><td>Lean V&amp;V: reuse hardware, start in simulation, spend lakhs not crores</td></tr>
+<tr><td>Automotive V&amp;V → autonomy and robotics</td><td>Everything to the right of the planner: the safety layer, drive-by-wire, and the proof that a fault ends in a safe stop</td></tr>
+</tbody></table></div></section>
+
+<section><h2><span class="sec-num">05 /</span> <span class="sec-title">What I ask a new team</span></h2>
+<ul class="compact"><li>What does success look like for this role at 90 days and at 12 months?</li>
+<li>What's slowing validation down most right now: environment, restbus, or product?</li>
+<li>How do results flow into the ALM, and what counts as release evidence?</li>
+<li>Where would you use AI in validation, and where would you forbid it?</li>
+<li>Where does the safety check sit in your stack, and is a stop in lane an acceptable final fallback?</li></ul></section></main>
+<footer class="site"><div class="wrap">&copy; 2026 Ketan Bakshi · Automotive V&amp;V · Bangalore</div></footer>
+</body></html>

@@ -1,0 +1,24 @@
+
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin:0 0 24px}
+.card{background:var(--card);border:1px solid var(--line);border-top:3px solid var(--accent);padding:16px 18px;display:flex;flex-direction:column;gap:6px}
+.card h3{margin:0;font-size:1.02rem}.card p{margin:0;color:var(--muted);font-size:.93rem}
+.card .links{margin-top:auto;padding-top:8px;display:flex;flex-wrap:wrap;gap:12px;font-size:.9rem;font-weight:600}
+.kicker{font-family:var(--mono);font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.story{background:var(--card);border:1px solid var(--line);padding:16px 18px;margin:0 0 14px}
+.story h3{margin:0 0 4px;font-size:1.02rem}.story .meta{color:var(--muted);font-size:.85rem;margin:0 0 8px}
+.story blockquote{margin:0;padding:0 0 0 14px;border-left:3px solid var(--accent);font-style:italic}
+.story .result{margin:8px 0 0;font-size:.92rem}
+.toc{columns:2 260px;margin:0 0 24px;padding-left:1.2rem}.toc li{margin-bottom:4px}
+article.note{background:var(--card);border:1px solid var(--line);padding:4px 20px 12px;margin:0 0 20px;overflow-x:auto}
+article.note table{border-collapse:collapse;font-size:.9rem;margin:8px 0}
+article.note th,article.note td{border:1px solid var(--line);padding:6px 8px;vertical-align:top;text-align:left}
+article.note pre{background:var(--paper);padding:10px;overflow-x:auto;font-size:.82rem}
+.pill{display:inline-block;font-family:var(--mono);font-size:.72rem;border:1px solid var(--line);padding:1px 8px;margin:0 4px 4px 0;background:var(--paper)}
+.note-box{background:var(--highlight);border-left:4px solid var(--accent);padding:10px 14px;font-size:.92rem;color:var(--muted);margin:0 0 20px}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--ink:#e6e9ee;--muted:#a3adba;--accent:#8fb4e8;--accent-dark:#b9d1f3;
+ --paper:#12161c;--card:#1a2029;--line:#2c3542;--highlight:#1f2a38}
+ :root:not([data-theme="light"]) .page-nav{background:rgba(18,22,28,.94)}
+ :root:not([data-theme="light"]) body{background-image:none}
+ :root:not([data-theme="light"]) .btn{color:#0f172a!important}
+ :root:not([data-theme="light"]) .btn-secondary{color:var(--accent)!important}}
+:root[data-theme="dark"]{--ink:#e6e9ee;--muted:#a3adba;--accent:#8fb4e8;--accent-dark:#b9d1f3;--paper:#12161c;--card:#1a2029;--line:#2c3542;--highlight:#1f2a38}

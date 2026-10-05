@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ketan Bakshi — Test Architect | HIL &amp; ML Ops for V&amp;V</title>
+  <meta name="description" content="Test Architect — XIL/HIL verification, ISO 26262, and an ML Ops prototype on real HIL benches for automotive V&amp;V at Daimler Truck DTICI." />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta property="og:title" content="Ketan Bakshi — Test Architect | HIL &amp; ML Ops for V&amp;V" />
+  <meta property="og:description" content="HIL verification, ISO 26262, and an ML Ops prototype on real HIL benches for automotive V&amp;V at Daimler Truck DTICI." />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="favicon.svg" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=Source+Sans+3:wght@400;600;700&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" /><link rel="stylesheet" href="extra.css" />
+</head>
+<body>
+  <header class="site">
+    <div class="wrap">
+      <span class="brand">Ketan Bakshi</span>
+      <p class="tagline">Test Architect · System Integration · HIL Verification · ML Ops for V&amp;V</p>
+      <div class="contact-row">
+        <a href="mailto:ketan01bakshi@gmail.com">ketan01bakshi@gmail.com</a>
+        <span>Bangalore, India</span>
+        <a href="https://linkedin.com/in/ketan-bakshi-b9380950" rel="noopener">LinkedIn</a>
+        <a href="https://github.com/ketan01bakshi-dev" rel="noopener">GitHub</a>
+      </div>
+    </div>
+  </header>
+
+  <nav class="page-nav" aria-label="On this page">
+    <div class="wrap nav-inner">
+      <a href="index.html">Overview</a>
+      <a href="#pipeline">Pipeline</a>
+      <a href="#resume">Resume</a>
+    </div>
+  </nav>
+
+  <main class="wrap">
+    <section class="hero hero-compact">
+      <h1>ML Ops pipeline — technical deep dive</h1>
+      <p class="lede">
+        Detailed architecture for the Modular Systems Integration Lab V&amp;V chain, a POC built
+        at Daimler Truck and scaled to real dSPACE SCALEXIO rigs.
+        Profile overview, skills, and career snapshot live on the
+        <a href="index.html">home page</a>.
+      </p>
+      <a class="btn btn-secondary" href="index.html">Back to overview</a>
+    </section>
+
+    <section id="pipeline">
+      <h2><span class="sec-num">01 /</span> <span class="sec-title">ML Ops for automotive V&amp;V</span></h2>
+      <p class="section-lead">
+        <strong>Daimler Truck DTICI — Modular Systems Integration Lab</strong> ·
+        POC on the e-mobility <span class="mono">dSPACE SCALEXIO</span> rig, used by the team today ·
+        first function: e-Torque reaction to the ACC acceleration request ·
+        Python orchestrator → <span class="mono">ECU-TEST</span> → XIL API
+      </p>
+
+      <ol class="pipeline-strip" aria-label="Pipeline stages">
+        <li>
+          <button type="button" class="stage-btn" data-stage="model" aria-pressed="false">
+            <span class="step-num">1</span><span class="step-label">Model</span><span class="step-desc">LLM drafts test basis</span>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="stage-btn" data-stage="derive" aria-pressed="false">
+            <span class="step-num">2</span><span class="step-label">Derive</span><span class="step-desc">Code: ISTQB + ISO 26262-4</span>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="stage-btn" data-stage="gate" aria-pressed="false">
+            <span class="step-num">3</span><span class="step-label">Gate</span><span class="step-desc">Human sign-off</span>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="stage-btn" data-stage="execute" aria-pressed="false">
+            <span class="step-num">4</span><span class="step-label">Execute</span><span class="step-desc">ECU-TEST → SCALEXIO</span>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="stage-btn" data-stage="closeloop" aria-pressed="false">
+            <span class="step-num">5</span><span class="step-label">Close-loop</span><span class="step-desc">RCA + RAG</span>
+          </button>
+        </li>
+      </ol>
+
+      <details class="code-snippet-wrap">
+        <summary>View a sample derived test case (boundary value analysis)</summary>
+        <div class="code-block-container">
+          <pre><code class="language-json">{
+  "req_id": "SYS_REQ_001",
+  "technique": "BVA",
+  "test_objective": "ACC engages only when vehicle speed > 30 km/h",
+  "signals_under_test": ["V_Veh_Speed", "ACC_Engage_Req", "St_ACC_Engage"],
+  "preconditions": ["System is ON", "No active DTCs"],
+  "steps": [
+    "Set V_Veh_Speed = 30.00 km/h",
+    "Set ACC_Engage_Req = 1",
+    "Expect St_ACC_Engage == INACTIVE",
+    "Set V_Veh_Speed = 30.01 km/h",
+    "Set ACC_Engage_Req = 1",
+    "Expect St_ACC_Engage == ACTIVE"
+  ]
+}</code></pre>
+        </div>
+        <p class="code-note">Illustrative, synthetic example. Code derives the steps and expected states from the validated test-basis model; the LLM never writes an expected result.</p>
+      </details>
+
+      <ul class="ops-chips" aria-label="ML Ops properties">
+        <li>Validator before every run</li>
+        <li>Hash-bound human approvals</li>
+        <li>Runner decides verdicts</li>
+        <li>Data stays in a Daimler sandbox</li>
+      </ul>
+
+      <details class="flow-details">
+        <summary>Detailed stage flow</summary>
+        <ol class="compact">
+          <li><strong>Model</strong> — the LLM (GPT-4o / GPT-4o mini) drafts only a test-basis model from the requirement text: conditions, transitions, "otherwise" rules, declared assumptions. A validator checks it against the DBC and the requirement and returns every error in one repair round.</li>
+          <li><strong>Derive</strong> — code derives the tests: ISTQB techniques (equivalence partitions, boundary values, decision tables, state transitions, scenarios), ISO 26262-4 integration-test methods per ASIL, and a derivation ladder from signal enumerations to pin faults to bus, message and signal level.</li>
+          <li><strong>Gate</strong> — a human signs off the HARA lock and the script review; each approval is bound to the artifact's SHA-256 hash, and a rejection note travels with the redraft.</li>
+          <li><strong>Execute</strong> — a bench health gate runs before every campaign; the Python orchestrator then drives ECU-TEST, which talks to SCALEXIO over the XIL API (plant-model variables, restbus manipulation, fault insertion unit). Timing checks use windows sized from measured latency; the runner, not the LLM, decides pass or fail.</li>
+          <li><strong>Close-loop</strong> — each failure gets a deciding-input signature (new ticket vs comment on an open defect); RAG over Jira/Confluence history surfaces prior similar defects; the LLM drafts the RCA and ticket, claims the bench didn't observe are rejected, and a human approves before anything is published.</li>
+        </ol>
+      </details>
+
+      <h3>Who does what</h3>
+      <ul class="runtime-legend" aria-label="Legend">
+        <li><span class="dot dot-api" aria-hidden="true"></span> LLM (GPT-4o / 4o mini, sandboxed)</li>
+        <li><span class="dot dot-rule" aria-hidden="true"></span> Code / rules</li>
+        <li><span class="dot dot-human" aria-hidden="true"></span> Human gate</li>
+        <li><span class="dot dot-hil" aria-hidden="true"></span> HIL rig</li>
+      </ul>
+      <p id="table-filter-hint" class="table-filter-hint" aria-live="polite"></p>
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr><th>Stage</th><th>Step</th><th>Done by</th><th>Runs on</th></tr>
+          </thead>
+          <tbody>
+            <tr data-stage="Model"><td>Model</td><td>Requirement → test-basis model</td><td class="mono">GPT-4o / 4o mini</td><td class="mono">Sandboxed API</td></tr>
+            <tr data-stage="Model"><td>Model</td><td>Validate vs DBC + requirement (20+ rules)</td><td class="mono">Rules</td><td class="mono">Python</td></tr>
+            <tr data-stage="Derive"><td>Derive</td><td>ISTQB: EP, BVA, decision tables, state transitions</td><td class="mono">Rules</td><td class="mono">Python</td></tr>
+            <tr data-stage="Derive"><td>Derive</td><td>ISO 26262-4 methods per ASIL</td><td class="mono">Rules</td><td class="mono">Python</td></tr>
+            <tr data-stage="Derive"><td>Derive</td><td>Ladder: enum → pin → bus → message → signal</td><td class="mono">Rules</td><td class="mono">Python</td></tr>
+            <tr data-stage="Gate"><td>Gate</td><td>HARA lock + script review (SHA-256 bound)</td><td class="mono">Engineer</td><td class="mono">Human gate</td></tr>
+            <tr data-stage="Execute"><td>Execute</td><td>Bench health gate</td><td class="mono">Rules</td><td class="mono">Python</td></tr>
+            <tr data-stage="Execute"><td>Execute</td><td>Campaign: restbus, FIU, plant model</td><td class="mono">No model</td><td class="mono">ECU-TEST → XIL → HIL</td></tr>
+            <tr data-stage="Execute"><td>Execute</td><td>Verdicts (latency-sized timing windows)</td><td class="mono">Runner</td><td class="mono">Python</td></tr>
+            <tr data-stage="RCA"><td>RCA</td><td>Deciding-input signature → ticket vs comment</td><td class="mono">Rules</td><td class="mono">Python</td></tr>
+            <tr data-stage="RCA"><td>RCA</td><td>RAG over Jira/Confluence history</td><td class="mono">Embeddings + GPT-4o</td><td class="mono">Sandboxed API</td></tr>
+            <tr data-stage="RCA"><td>RCA</td><td>RCA + ticket drafts (fact-checked vs bench)</td><td class="mono">GPT-4o / 4o mini</td><td class="mono">Sandboxed API</td></tr>
+            <tr data-stage="Gate"><td>Gate</td><td>Publish approval before Jira/Confluence</td><td class="mono">Engineer</td><td class="mono">Human gate</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>How it stitches together</h3>
+      <div class="mermaid-wrap">
+        <div class="mermaid">
+          graph TD
+            A[Requirements + DBC] -->|GPT-4o / 4o mini| B[Test-basis model]
+            B -->|Validator rules| C[Validated model]
+            C -->|Code: ISTQB + ISO 26262-4| D[Test cases + scripts]
+            D -->|Human: HARA lock + script review| E[Approved campaign]
+            E -->|Bench health gate| F[ECU-TEST]
+            F -->|XIL API| G[SCALEXIO rig]
+            G -->|Runner verdicts| H[Results]
+            H -->|Deciding-input signature| I[Failure signature]
+            I -->|RAG: Jira / Confluence| J[Prior similar defects]
+            J -->|GPT-4o, fact-checked| K[RCA + ticket drafts]
+            K -->|Human: publish approval| L[Jira / Confluence]
+        </div>
+      </div>
+
+      <div class="pipeline-steps">
+        <ol>
+          <li>One Python orchestrator generates and gates the tests and drives execution through ECU-TEST, which also reports the results</li>
+          <li>The LLM drafts a model and the RCA text; code derives every test and the runner decides every verdict</li>
+          <li>Human gates: HARA lock, script review, publish approval, each bound to the artifact's hash</li>
+          <li>GPT-4o, the RAG and its embeddings run inside a sandboxed Daimler environment, set up with Daimler IT; data never leaves the company</li>
+        </ol>
+      </div>
+
+      <p class="footnote">
+        Same ML Ops pattern (ingest → structured model → human sign-off → artifact) shipped in production outside automotive
+        (Aarogya One Connect, <a href="https://github.com/ketan01bakshi-dev/Healthcare-Secure">Healthcare-Secure</a> — transferable pipeline discipline, not a career pivot).
+        A personal rebuild of this pipeline on synthetic data is listed under <a href="projects.html">Projects</a>.
+      </p>
+    </section>
+
+    <section id="resume">
+      <h2><span class="sec-num">02 /</span> <span class="sec-title">Resume</span></h2>
+      <p>Current résumé (Word) — System Integration / HIL focus.</p>
+      <a class="btn btn-secondary" href="assets/resume.docx" download="Ketan_Bakshi_Resume.docx">Download résumé (Word)</a>
+      <a class="btn" href="index.html" style="margin-left: 0.5rem;">Back to overview</a>
+    </section>
+  </main>
+
+  <footer class="site">
+    <div class="wrap">
+      &copy; 2026 Ketan Bakshi · Automotive V&amp;V · Bangalore
+      <p class="print-url"></p>
+    </div>
+  </footer>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'base',
+      themeVariables: {
+        primaryColor: '#eef2f6',
+        primaryTextColor: '#0f172a',
+        primaryBorderColor: '#1e3a5f',
+        lineColor: '#475569',
+        secondaryColor: '#ffffff',
+        tertiaryColor: '#eef2f6'
+      }
+    });
+  </script>
+  <script src="site.js" defer></script>
+</body>
+</html>

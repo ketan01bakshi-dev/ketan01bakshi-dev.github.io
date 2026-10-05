@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HIL ML Ops agent · Ketan Bakshi</title><meta name="description" content="LLM-assisted HIL test pipeline with human gates, rebuilt on synthetic data.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=Source+Sans+3:wght@400;600;700&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="extra.css"></head>
+<body class="page-home"><header class="site"><div class="wrap">
+<span class="brand">Ketan Bakshi</span>
+<p class="tagline">Test Architect · System Integration · HIL Verification · ML Ops for V&amp;V</p>
+<div class="contact-row">
+<a href="mailto:ketan01bakshi@gmail.com">ketan01bakshi@gmail.com</a><span>Bangalore, India</span>
+<a href="https://linkedin.com/in/ketan-bakshi-b9380950" rel="noopener">LinkedIn</a>
+<a href="https://github.com/ketan01bakshi-dev" rel="noopener">GitHub</a>
+</div></div></header>
+<nav class="page-nav" aria-label="Site"><div class="wrap nav-inner"><a href="index.html">Home</a><a href="mlops.html" class=is-active aria-current=page>HIL ML Ops</a><a href="projects.html">Projects</a><a href="stories.html">Stories</a><a href="knowledge.html">Technical notes</a><a href="approach.html">How I work</a></div></nav>
+<main class="wrap"><section class="hero hero-compact"><h1>HIL ML Ops agent</h1>
+<p class="lede">An LLM-assisted test pipeline for a HIL bench where <strong>rules decide and LLMs draft</strong>: requirements and a DBC go in; test specs, scripts, bench results, root-cause drafts and Jira tickets come out, with a human approving each step.</p>
+<div class="note-box">This is my personal rebuild on <strong>synthetic ACC data</strong>, made so the approach can be shown outside my employer. The original proof of concept runs on a real dSPACE SCALEXIO rig at work; it's described on the <a href="details.html">deep-dive page</a>.</div></section>
+
+<section><h2><span class="sec-num">01 /</span> <span class="sec-title">The pipeline</span></h2>
+<pre class="pipeline-steps" style="white-space:pre-wrap">DOORS export (ReqIF/CSV) + DBC
+ → 00 parse (rules) → 01 design (LLM specs) → 02 ISTQB test design (LLM test-basis model; code derives EP/BVA/DT/ST cases)
+ → 03 functional-safety derivation (LLM HARA; rules for bus faults)        ── gate: HARA lock
+ → ECU script review                                                      ── gate: script review
+ → 04 execute on a virtual CAN bench → 05 observe (decode, timeline)
+ → 06 close the loop: LLM compare, hybrid RAG + LLM root-cause draft, ticket drafts   ── gate: publish approval
+ → 11 publish: Jira issues, RCA indexed back into RAG, verification report</pre></section>
+
+<section><h2><span class="sec-num">02 /</span> <span class="sec-title">Rules decide, LLMs draft</span></h2>
+<div class="table-wrap"><table class="data"><thead><tr><th>Decision</th><th>Made by</th><th>Why</th></tr></thead><tbody>
+<tr><td>Signal catalogue and allow-list</td><td>DBC (cantools)</td><td>Ground truth</td></tr>
+<tr><td>Test cases: partitions, boundaries, decision tables, transitions, scenarios</td><td>Code, from the approved test-basis model</td><td>Deterministic, reviewable, free</td></tr>
+<tr><td>Test-basis model (conditions, states, assumptions)</td><td>LLM draft → code validation → human approval</td><td>It is the oracle</td></tr>
+<tr><td>ASIL</td><td>Requirement metadata</td><td>Never an LLM decision</td></tr>
+<tr><td><strong>Pass / fail</strong></td><td><strong>HIL runner, expected vs decoded CAN</strong></td><td>Keeps AI out of the verdict path (tool confidence, ISO 26262-8)</td></tr>
+<tr><td>Root-cause hypotheses</td><td>LLM, citing only retrieved documents</td><td>No invented causes</td></tr>
+<tr><td>New ticket vs comment on an open defect</td><td>Code: requirement + deciding input signature</td><td>Recurring failures add evidence instead of duplicates</td></tr>
+<tr><td>Release</td><td>Human gates bound to the artifact's SHA-256</td><td>A changed artifact re-opens the gate</td></tr>
+</tbody></table></div></section>
+
+<section><h2><span class="sec-num">03 /</span> <span class="sec-title">What's built</span></h2>
+<ul class="compact">
+<li><strong>Grounding on every LLM output:</strong> schema validation, DBC allow-list, a script grammar and lint (values inside DBC range, every stimulus set before the first check, each output seen in at least two states), computed boundary values, and claim checks so an RCA can only quote values this run actually applied.</li>
+<li><strong>Virtual bench:</strong> python-can with a simulated ACC ECU and injectable faults: threshold errors, ignored brake or deactivate button, frame loss, E2E CRC and counter faults, CAN fault confinement and bus-off recovery, and a virtual fault-insertion unit (open, short to ground or battery) on the CAN lines.</li>
+<li><strong>Test design standards in code:</strong> ISTQB techniques, ISO 26262-4 integration methods per ASIL, and my own derivation ladder (signal enumerations → pins → bus → message → signal) built from the DBC.</li>
+<li><strong>Hybrid RAG:</strong> BM25 + local embeddings (nomic-embed-text) fused by reciprocal rank, over Jira and Confluence Cloud; approved RCAs are indexed back so the same root cause isn't solved twice.</li>
+<li><strong>Cost-first routing:</strong> stages ask for a tier, not a vendor; local Ollama, free cloud tiers or GPT-4o mini under a per-run cost cap. A full live campaign cost under one US cent.</li>
+<li><strong>Evidence:</strong> per-stage manifests (model, prompt hash, approver), an audit log, eval scores and a traceability report; 78 automated tests.</li>
+</ul></section>
+
+<section><h2><span class="sec-num">04 /</span> <span class="sec-title">Live runs (synthetic requirements)</span></h2>
+<p>Run against a real Jira/Confluence Cloud site: 14 requirements up to ASIL-B placeholders, up to 144 derived cases per cycle. The bench caught every seeded fault; each failure became a new Jira defect or a comment on the open one, depending on the deciding input. I rejected drafts at the gates several times (an inverted hazard, a missing check), and each rejection reason was fed into the redraft.</p>
+<p><a class="btn btn-secondary" href="details.html">Deep dive: the work proof of concept</a> <a class="btn btn-secondary" href="stories.html#STAR-03">The story behind it</a></p></section></main>
+<footer class="site"><div class="wrap">&copy; 2026 Ketan Bakshi · Automotive V&amp;V · Bangalore</div></footer>
+</body></html>
