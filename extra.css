@@ -1,4 +1,5 @@
 
+.nav-inner{scrollbar-width:none}.nav-inner::-webkit-scrollbar{display:none}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin:0 0 24px}
 .card{background:var(--card);border:1px solid var(--line);border-top:3px solid var(--accent);padding:16px 18px;display:flex;flex-direction:column;gap:6px}
 .card h3{margin:0;font-size:1.02rem}.card p{margin:0;color:var(--muted);font-size:.93rem}
