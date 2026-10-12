@@ -850,6 +850,16 @@ with can.Bus(interface=&quot;virtual&quot;, channel=&quot;fd&quot;, protocol=can
 <ul>
 <li>that you configured E2E in the restbus or the ARXML (it was testing);</li>
 <li>byte offsets, or which ECUs used which profile (not recorded).</li>
+</ul>
+<h3><a href="knowledge.html#k29">see notes</a> addendum : tuning the E2E window without losing detection (safe-stop bench v2.6, )</h3>
+<ul>
+<li>From a synthetic bench; the mechanism is general to windowed E2E checks.*</li>
+<li><strong>The double count:</strong> two corrupted frames → two WRONG_CRC; the next good frame's counter jumps by 3 &gt; max delta 2 → <strong>WRONG_SEQUENCE</strong>, a third error for the same noise burst → "&gt; 2 errors in 6" → INVALID → false stop.</li>
+<li><strong>Fix the counting first:</strong> a counter jump <strong>explained by the CRC failures just before it</strong> is frames lost (OK_SOME_LOST), not a new error. The CRC failures still count; an unexplained jump is still an error.</li>
+<li><strong>What the alternatives cost:</strong> max delta 3 also tolerates <em>real</em> repeated counter jumps; an error budget of 3 misses intermittent CRC and detects later. Each trades detection for fewer false stops.</li>
+<li><strong>Measure both sides:</strong> false stops per 1000 km (Monte Carlo through the real receiver) <strong>and</strong> time-to-INVALID for degraded streams against the FTTI, plus the full scenario matrix.</li>
+<li><strong>Requirement gap it exposed:</strong> "E2E INVALID → stop within FTTI" doesn't say what a <em>partly</em> degraded stream is (20% bad frames: only ~30% detected within 250 ms).</li>
+<li><strong>Field context:</strong> CAN retransmits frames that fail its own bus CRC, so an E2E CRC failure points to corruption outside the bus (gateway, memory, software). Measure the real E2E error rate (DTC counters) before calibrating.</li>
 </ul></article><article class="note" id="k15"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">HIL test-failure triage: my method as one framework (&quot;TRIAGE&quot;)</span></h2><p><strong>Why this section exists:</strong> "How do you triage a failed HIL test?" (question bank ****) is a standard HIL question, and root-cause analysis sits in most validation JDs. I described three approaches: hypothesis buckets checked via test intent and a last-known-good delta; DTC → traces → signal origin; escalation to the component owner. They're one funnel, not three alternatives.</p>
 <p><strong>Transcription notes:</strong> "RESPA" in the dictation is read as <strong>restbus</strong> (the HIL simulating the ECUs that aren't on the bench; question bank B-03). "Configuration disk" = dSPACE <strong>ConfigurationDesk</strong>. Correct these if wrong.</p>
 <h3>Three suspects, ruled out in this order</h3>
@@ -1839,7 +1849,13 @@ DS2680 I/O Unit ── Power Control 1 ──► programmable supply (designed f
 <td>Zero events in N independent trials bounds the true rate below about 3/N at 95% confidence</td>
 </tr>
 </tbody>
-</table></article><article class="note" id="k31"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">A lean SiL → PiL → HiL ladder, and what only a real bus teaches</span></h2><h3>1. The ladder: same scenarios at every level, each removing one excuse</h3>
+</table>
+<h3>7. Addendum : a compiled FMU, and prove the harness first</h3>
+<ul>
+<li><strong>What a supplier ships:</strong> <code>modelDescription.xml</code> + a native <code>binaries/win64</code> DLL, no Python. A hand-written FMI 2.0 wrapper is small (~250 lines) but has rules a generator hides: parameters settable only before initialisation ends; inputs need start values; outputs <code>initial="exact"</code>; <code>fmi2Reset</code> restores every start value; the GUID must match XML and binary (make it a content hash so a stale pair is refused).</li>
+<li><strong>Prove the harness before blaming the binary.</strong> My intake tool reported "re-instantiate crashes" for a PythonFMU; the real cause was the harness: FMPy's <code>freeInstance</code> also unloads the DLL, and the test reused the unloaded wrapper. <em>Telling a supplier their FMU crashes, when it's your harness, costs credibility.</em> Rerun the failing sequence with a fresh wrapper, or against a binary you can reason about, before raising it.</li>
+<li><strong>Isolate an embedded interpreter's crash:</strong> PythonFMU tests segfaulted the <em>next</em> test ~1 run in 3; running them in a child process kept the suite trustworthy and still reports a crash as a failure.</li>
+</ul></article><article class="note" id="k31"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">A lean SiL → PiL → HiL ladder, and what only a real bus teaches</span></h2><h3>1. The ladder: same scenarios at every level, each removing one excuse</h3>
 <table>
 <thead>
 <tr>
@@ -1928,6 +1944,130 @@ DS2680 I/O Unit ── Power Control 1 ──► programmable supply (designed f
 <tr>
 <td>Single source of truth (firmware)</td>
 <td>All logic in one portable core compiled for both PC and target, so equivalence proven on the PC carries over to the hardware</td>
+</tr>
+</tbody>
+</table>
+<h3>5. What the boards taught</h3>
+<p><strong>a. Judge timing on the DUT's clock.</strong> The bench checked B's steering slew every 20 ms on the PC's clock. One frame arriving 1 ms late put three 10 ms cycles of change into one sample: a legal 48 °/s read as 72 °/s, 1 run in 4. Fix: time comes from the DUT itself (here the E2E counter in its actuator frame, one count per cycle, unwrapped). 2/8 false fails → 0/12.</p>
+<p><strong>b. An unprotected status message is not evidence.</strong> 1 ms "STOP → NORMAL" blips made the controller look like it left a latched stop (26/54 in one run). Every blip frame was byte-identical to a frame from hours earlier. SAF_Status had no alive counter, so nothing could reject it. The bench now accepts a bus frame only if the DUT's own USB copy vouches for it (within 20 ms, either order, one copy per frame) and counts the rest.</p>
+<p><strong>c. Give each wire a failure signature before replacing one</strong> ( + ):</p>
+<table>
+<thead>
+<tr>
+<th>Line</th>
+<th>What a bad one does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SO / MISO</td>
+<td>reads wrong, writes right</td>
+</tr>
+<tr>
+<td>SI / MOSI</td>
+<td>writes wrong; a corrupted instruction can become "request to send"</td>
+</tr>
+<tr>
+<td>SCK</td>
+<td>reads and writes wrong, shifted by one bit after the glitch</td>
+</tr>
+<tr>
+<td>CS</td>
+<td>commands cut short; bytes run as new instructions</td>
+</tr>
+<tr>
+<td>VCC / GND</td>
+<td>the chip resets: config registers back to defaults</td>
+</tr>
+<tr>
+<td>10 MHz only</td>
+<td>signal integrity (long or loose wires, poor ground return), not an open contact</td>
+</tr>
+</tbody>
+</table>
+<p>Run it hands-off, then under real bus load, then with a guided wiggle test. Result here: <strong>0 errors in ~22M transactions on both boards</strong>, so no wire was at fault.</p>
+<p><strong>d. The cause: a flag read racing a frame's arrival.</strong> On the receiving board, the MCP2515's flag register sometimes read <strong>0x02 ("RXB1 full") for 0x01 ("RXB0 full")</strong> at the instant a frame landed, in READ STATUS and in a plain register read alike, at 10, 4 and 1 MHz (static registers never misread). The library trusted it, read RXB1, which held a frame from hours earlier (an ESP32 reset doesn't clear the MCP2515's buffers), and forwarded it. Fix: rollover off (RXB0CTRL.BUKT = 0) and receive from RXB0 only; an RXB1 flag is a misread, so read again. Stale duplicates 37–50 per 30 s → 0, no lost frames. <em>Observed on these boards; not checked against Microchip's errata.</em></p>
+<p><strong>e. The decisive test removes a suspect.</strong> The first story (B's transmit buffer) fitted every observation. It died when the stale frame kept arriving while B ran a sketch that never sends it.</p>
+<p><strong>f. Bench faults are not verdicts, and detectors can cause faults.</strong> Observer lost or a bus node re-initialised → recover the boards and rerun the scenario, recording the fault. The first CAN-mode check re-initialised on one bad read; the blocking re-init caused outages and stalled the safety loop up to 429 ms. Debounce over several reads.</p>
+<p><strong>g. Look at where the lag happens (v2.9.5).</strong> The worst lag in the heaviest scenario was always at t = 0–1 ms: set-up (a replay log, buses, the vehicle) ran after the clock started, and after the DUT's reset, so the DUT, running on its own clock, also got an unmeasured head start. Order: set-up → reset → clock. No garbage collection inside the 1 ms loop. A run that still stalls is a <strong>bench fault</strong>: rerun it, record the stall, and never take a verdict from it. Worst lag median 2.8 → 0.8 ms, max 6.7 → 1.6 ms; two full runs with 0 FAIL.</p>
+<p><strong>h. An alive counter in a full 8-byte frame (v2.9.6).</strong> Pack to the bits needed (8 states → 3 bits, a flag → 1, 15 causes → 4) to free a <strong>CRC-8</strong> (over the data + data ID) and an <strong>8-bit counter</strong>. Receiver: step 1–2 accepted, repeats and jumps rejected, resync after two in a row or at once after an announced OFF (without that, back-to-back showed one lost cycle after a restart). Proof by bringing the fault back: faulty receive firmware + the bench filter off → the counter alone rejected every stale frame. A 4-bit counter (as in E2E Profile 2) would let ~1 in 8 stale copies through with the same tolerance; 8 bits, ~2 in 256.</p>
+<p><strong>i. Test the reset for real (v2.9.7).</strong> Pull the reset pin mid-scenario, don't send a "you were reset" message. The controller keeps its configuration in flash and boots into the latched stop with the reset as the cause (185–187 ms to the first status). The bench reports it OFF while booting (it applied the reset), waits instead of declaring the observer lost, and drops a status frame still in flight from before the reset (no board boots in &lt; 50 ms). The actuator ECU's own fallback brakes after ~100 ms. A build without the restore stays OFF and <strong>fails</strong>: the test can fail. A power cut is still a separate test: it also drops the CAN transceiver.</p>
+<p><strong>j. Don't receive CAN in a loop that also does other work (v2.9.8).</strong> With rollover off, the MCP2515 has one usable receive buffer, and the sender's two frames arrive ~230 µs apart, so anything blocking the loop for longer loses a frame. On board A that was its own watchdog pulses (100 µs busy-waits; a burst of 30 = 3 ms): 40 overflows a minute, 0 without. + Fix: reception in its own task (here on the ESP32's other core), woken by the controller's INT line, feeding a RAM queue that the main loop drains; all SPI in that one task. Two traps: (1) <strong>INT is level-active</strong> and the error flag ERRIF is set on <em>any</em> error-state change, including back to "no errors": if it isn't cleared, INT stays low, no new edge comes, and the task silently falls back to polling; (2) frames arriving while the node boots overflow before the task runs: a boot window, not a runtime loss. Result: 0 overflows in 3 × 60 s with bursts; queue high-water mark 2. <em>Also: a USB-serial bridge without flow control can't block the MCU when the PC stalls; bytes are lost on the PC side instead.</em></p>
+<p><strong>k. One layout at every level (v2.10).</strong> A fix made at one test level (the status frame's CRC + counter on hardware) must reach the others, or they test different messages under the same ID. One DBC definition, one receiver in shared code; a cross-level test re-encodes the firmware's real frames through the DBC (byte for byte); a replay test at the vECU-over-CAN level injects a stale copy from a second sender: rejected with the check on, latch broken with it off. Assert only what a host stall can't change (rejects, invariants), not timing, so the test isn't flaky on a busy PC.</p>
+<p><strong>l. Lockstep when real time isn't the question (v2.11).</strong> For a DUT that runs on the bench's simulated time (a vECU process), real-time pacing only adds a failure mode: host stalls. Lockstep protocol: the bench sends every input for ms t, then the feedback that closes it; at each task boundary it waits for that cycle's output, identified by a cycle number (here the alive counter, so only E2E-valid frames can release the wait); the DUT runs cycle T when feedback(T) arrives, and anything after it belongs to T+1. Acknowledge a reset separately, or cycle 0 runs without the t = 0 inputs. Lockstep proves logic and interface (DBC, E2E, ordering); keep real time for latency. Test it by stalling the bench on purpose.</p>
+<p><strong>m. A power cut is a separate test from a reset (v2.12, prepared).</strong> Reset (EN pin): CPU restarts, transceiver and USB stay powered. Supply cut: CPU, CAN transceiver and USB-serial chip all go; cold boot; a flash write can be cut. Bench design: the bus node drives a relay whose <strong>normally-closed</strong> contact is in the DUT's supply (pin low at boot, so a crashed bench leaves the DUT powered); the DUT's USB lead is <strong>data-only</strong> (else USB back-powers it); the bench observes only through the bus during the cut and reopens the vanished COM port afterwards. Expected results written before measuring; assumed values (power-on boot) marked until measured. Gate CI on a semantic check (back-to-back exact) rather than run.py's exit code, and write known findings to JUnit as skipped, not failed.</p>
+<h3>6. Architecture and tech stack in one page</h3>
+<p><strong>The design idea: one interface, many controllers.</strong> The runner talks only to <code>DeviceUnderTest</code> (<code>reset</code>, <code>step(t, frames, kicks, feedback) → Outputs</code>, <code>close</code>). Scenarios, planner, vehicle model, oracle and reports are identical at every level; only the adapter changes. That's why the same 56 scenarios run seven ways, and why back-to-back between levels is meaningful.</p>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Modules (<code>ssb/</code>)</th>
+<th>Job</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>System simulated</td>
+<td><code>safety.py</code> (reference + 14 mutants), <code>e2e.py</code>, <code>planner.py</code>, <code>plant.py</code>, <code>bus.py</code></td>
+<td>The checker, message protection, the doer with fault hooks, vehicle + actuator ECU, virtual CAN</td>
+</tr>
+<tr>
+<td>Test engine</td>
+<td><code>runner.py</code> (1 ms loop, invariants, lag, reruns), <code>oracle.py</code>, <code>campaigns.py</code>, <code>scenarios.py</code>, <code>config.py</code>, <code>report.py</code>, <code>mdf_export.py</code>, <code>rt.py</code></td>
+<td>Play, judge, campaign, report</td>
+</tr>
+<tr>
+<td>Adapters</td>
+<td><code>dut.py</code> (Reference, FMU, CAN), <code>ros2_dut.py</code>, <code>native.py</code> (C++ via ctypes, loopback), <code>hil.py</code> (link protocol, PiL/HiL), <code>hil_emu.py</code></td>
+<td>Reach the controller</td>
+</tr>
+<tr>
+<td>Firmware</td>
+<td><code>hil/SafeStopCore</code> (Controller + Node), SafetyNode (B), BusNode (A), SpiProbe, SpiStress</td>
+<td>Same logic on the chip</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Level</th>
+<th>Needs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SiL reference (<code>run.py</code>, <code>--full</code>)</td>
+<td>Python ≥ 3.10 standard library only</td>
+</tr>
+<tr>
+<td>CAN process</td>
+<td>python-can (udp_multicast), cantools (DBC), msgpack</td>
+</tr>
+<tr>
+<td>FMU</td>
+<td>FMPy (+ pythonfmu to build the Python FMUs)</td>
+</tr>
+<tr>
+<td>C++ on the PC</td>
+<td>ziglang (compiler from PyPI), ctypes; flags <code>-ffp-contract=off -fno-fast-math</code></td>
+</tr>
+<tr>
+<td>PiL / HiL</td>
+<td>pyserial; arduino-cli, Arduino-ESP32 core, autowp-mcp2515, FreeRTOS, NVS</td>
+</tr>
+<tr>
+<td>ROS 2</td>
+<td>rclpy + std_msgs, ROS 2 Lyrical in WSL Ubuntu</td>
+</tr>
+<tr>
+<td>Traces, quality, CI</td>
+<td>asammdf (MDF4), ruff, mypy, GitHub Actions</td>
+</tr>
+<tr>
+<td><strong>Planned</strong></td>
+<td>Sniffer (MKS CANable V2.0, ordered): python-can <code>gs_usb</code> (candleLight firmware; pyusb + libusb on Windows) or <code>slcan</code>; logs via <code>can.logger</code> (.asc/.blf). CAN FD: an MCP2517FD/2518FD Arduino library (e.g. ACAN2517FD), to confirm when the boards arrive</td>
 </tr>
 </tbody>
 </table></article><article class="note" id="k22"><h2><span class="sec-title" style="text-transform:none;letter-spacing:0">EV charging communication: CCS, MCS, DIN 70121, ISO 15118</span></h2><h3>Full forms</h3>
@@ -3038,6 +3178,13 @@ DS2680 I/O Unit ── Power Control 1 ──► programmable supply (designed f
 <li>that you've worked with SOTIF, UL 4600, ISO/PAS 8800, R157 or R155/R156;</li>
 <li>ASIL ratings for another company's functions;</li>
 <li>that India mandates any of these for AVs (not checked).</li>
+</ul>
+<h3><a href="knowledge.html#k28">see notes</a> addendum : load vs the brake check, from the safe-stop bench v2.5</h3>
+<ul>
+<li>Illustrative, from a synthetic bench; the reasoning is general.*</li>
+<li>If the brake ECU turns a deceleration request into <strong>force on the curb mass</strong> (open loop), a payload gives proportionally less deceleration. +800 kg on a 1500 kg vehicle: a planned stop <strong>34% longer</strong> flat, <strong>67% longer at −6%</strong>.</li>
+<li>A <strong>ratio check</strong> ("achieved &lt; 50% of demand for 400 ms") is a <em>fault</em> detector, not a <em>performance</em> monitor: it stays silent through that loss, then, near its threshold, <strong>misreads payload as a brake fault</strong>. Actuator lag during the jerk-limited ramp eats its margin, so the trip depends on grade.</li>
+<li><strong>Ask:</strong> is there a stopping-distance budget per ODD (speed, grade, maximum payload)? Is the brake loop closed on deceleration? Does the safety layer get a mass estimate?</li>
 </ul></article></main>
 <footer class="site"><div class="wrap">&copy; 2026 Ketan Bakshi · Automotive V&amp;V · Bangalore</div></footer>
 </body></html>

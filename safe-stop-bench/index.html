@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Safe-Stop Bench · Ketan Bakshi</title>
+<meta name="description" content="A test bench for an autonomous-vehicle (AV) safety layer. Simulation testing and failure triage, shown rather than claimed: 56 fault scenarios from Python SiL to a real-bus ESP32 HiL, every failure classified before a ticket is filed, two hardware root causes, an agentic test pipeline with human gates.">
+<meta property="og:title" content="Safe-Stop Bench: not every red test is a bug">
+<meta property="og:description" content="Autonomous-vehicle (AV) safety-layer test bench: 56 fault scenarios, 7 test levels from SiL to real-bus HiL, failure classification, signal-level root cause, agentic test design. By Ketan Bakshi.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ketan01bakshi-dev.github.io/safe-stop-bench/">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f4f7fb;
+  --card: #ffffff;
+  --ink: #0f172a;
+  --muted: #475569;
+  --faint: #64748b;
+  --line: #d9e1eb;
+  --navy: #1e3a5f;
+  --navy-ink: #13294a;
+  --hero-a: #0a1628;
+  --hero-b: #13294a;
+  --hero-ink: #e6edf7;
+  --hero-muted: #9fb3cc;
+  --pass: #15803d;
+  --product: #c2410c;
+  --bench: #b45309;
+  --test: #6d28d9;
+  --gap: #0f766e;
+  --tint-product: #fff4ed;
+  --tint-bench: #fff8eb;
+  --tint-test: #f5f1ff;
+  --tint-gap: #ecfaf7;
+  --code-bg: #eef2f7;
+  --shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 8px 24px rgba(15, 23, 42, .06);
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+  --sans: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --max: 72rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b1220; --card: #111a2c; --ink: #e5ebf4; --muted: #a7b4c6; --faint: #8392a8; --line: #24324a;
+    --navy: #8fb4e6; --navy-ink: #c8dbf5; --hero-a: #060d1a; --hero-b: #0f2140;
+    --pass: #4ade80; --product: #fb923c; --bench: #fbbf24; --test: #a78bfa; --gap: #2dd4bf;
+    --tint-product: #2a1709; --tint-bench: #2a1f08; --tint-test: #1c1530; --tint-gap: #0a2724;
+    --code-bg: #18233a; --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .25);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b1220; --card: #111a2c; --ink: #e5ebf4; --muted: #a7b4c6; --faint: #8392a8; --line: #24324a;
+  --navy: #8fb4e6; --navy-ink: #c8dbf5; --hero-a: #060d1a; --hero-b: #0f2140;
+  --pass: #4ade80; --product: #fb923c; --bench: #fbbf24; --test: #a78bfa; --gap: #2dd4bf;
+  --tint-product: #2a1709; --tint-bench: #2a1f08; --tint-test: #1c1530; --tint-gap: #0a2724;
+  --code-bg: #18233a; --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .25);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 1.06rem; line-height: 1.6; }
+a { color: var(--navy); }
+a:hover { color: var(--navy-ink); }
+:focus-visible { outline: 2px solid var(--navy); outline-offset: 3px; }
+code, .mono { font-family: var(--mono); font-size: .88em; }
+code { background: var(--code-bg); padding: .08em .35em; border-radius: 4px; }
+.wrap { max-width: var(--max); margin: 0 auto; padding: 0 1.5rem; }
+@media (max-width: 600px) { .wrap { padding: 0 1rem; } }
+
+/* top bar */
+.topbar { background: var(--hero-a); color: var(--hero-muted); font-size: .9rem; }
+.topbar .wrap { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding-top: .7rem; padding-bottom: .7rem; flex-wrap: wrap; }
+.topbar a { color: var(--hero-ink); text-decoration: none; }
+.topbar a:hover { text-decoration: underline; color: #fff; }
+.topbar nav { display: flex; gap: 1.1rem; flex-wrap: wrap; }
+
+/* hero */
+.hero { position: relative; overflow: hidden; color: var(--hero-ink);
+  background:
+    linear-gradient(rgba(143, 180, 230, .07) 1px, transparent 1px) 0 0 / 28px 28px,
+    linear-gradient(90deg, rgba(143, 180, 230, .07) 1px, transparent 1px) 0 0 / 28px 28px,
+    linear-gradient(160deg, var(--hero-a), var(--hero-b)); }
+.hero .wrap { display: grid; grid-template-columns: 1.15fr .85fr; gap: 3rem; align-items: center; padding-top: 4.2rem; padding-bottom: 4.2rem; }
+@media (max-width: 900px) { .hero .wrap { grid-template-columns: 1fr; gap: 2rem; padding-top: 3rem; padding-bottom: 3rem; } }
+.kicker { font-family: var(--mono); font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; color: #8fb4e6; margin: 0 0 1rem; }
+.hero h1 { font-size: clamp(2.3rem, 5.4vw, 3.9rem); line-height: 1.04; margin: 0 0 1.2rem; font-weight: 800; letter-spacing: -.02em; text-wrap: balance; }
+h2.sec, .hunt h3, .tcard h3 { text-wrap: balance; }
+.hero h1 .red { color: #ff8a65; }
+.hero .lede { font-size: 1.2rem; color: #c9d6e8; max-width: 38rem; margin: 0 0 1.6rem; }
+.btns { display: flex; flex-wrap: wrap; gap: .7rem; margin-bottom: 1.4rem; }
+.btn { display: inline-flex; align-items: center; gap: .45rem; padding: .72rem 1.15rem; border-radius: 8px; font-weight: 700; text-decoration: none; font-size: 1rem; border: 1px solid transparent; }
+.btn-primary { background: #e6edf7; color: #0a1628; }
+.btn-primary:hover { background: #fff; color: #0a1628; }
+.btn-ghost { border-color: rgba(201, 214, 232, .45); color: #e6edf7; }
+.btn-ghost:hover { border-color: #e6edf7; color: #fff; background: rgba(255, 255, 255, .06); }
+.chips { display: flex; flex-wrap: wrap; gap: .45rem; padding: 0; margin: 0; list-style: none; }
+.chips li { font-family: var(--mono); font-size: .75rem; color: var(--hero-muted); border: 1px solid rgba(159, 179, 204, .35); border-radius: 999px; padding: .2rem .65rem; }
+
+/* hero result strip */
+.strip-card { background: rgba(10, 22, 40, .55); border: 1px solid rgba(143, 180, 230, .22); border-radius: 14px; padding: 1.3rem 1.3rem 1.1rem; backdrop-filter: blur(4px); }
+.strip-card h2 { font-family: var(--mono); font-size: .78rem; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--hero-muted); margin: 0 0 .9rem; }
+.cells { display: grid; grid-template-columns: repeat(14, 1fr); gap: 5px; }
+.cell { aspect-ratio: 1; border-radius: 3px; background: #22c55e; opacity: .88; }
+.cell.known { background: transparent; border: 2px solid #fbbf24; opacity: 1; }
+.strip-legend { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: .9rem; font-size: .85rem; color: #c9d6e8; }
+.strip-legend span::before { content: ""; display: inline-block; width: .7rem; height: .7rem; border-radius: 2px; margin-right: .4rem; vertical-align: -1px; background: #22c55e; }
+.strip-legend span.k::before { background: transparent; border: 2px solid #fbbf24; }
+.strip-note { font-size: .88rem; color: var(--hero-muted); margin: .8rem 0 0; }
+
+/* stats */
+.stats { margin-top: -2.2rem; position: relative; z-index: 2; }
+.stats ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, 1fr); background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
+.stats li { padding: 1.15rem 1rem; border-right: 1px solid var(--line); }
+.stats li:last-child { border-right: 0; }
+.stats strong { display: block; font-size: 1.9rem; line-height: 1.1; font-weight: 800; color: var(--navy-ink); letter-spacing: -.01em; }
+.stats span { display: block; font-size: .9rem; color: var(--muted); margin-top: .3rem; line-height: 1.35; }
+@media (max-width: 1000px) { .stats ul { grid-template-columns: repeat(3, 1fr); } .stats li:nth-child(3) { border-right: 0; } .stats li:nth-child(-n+3) { border-bottom: 1px solid var(--line); } }
+@media (max-width: 560px) { .stats ul { grid-template-columns: repeat(2, 1fr); } .stats li { border-right: 1px solid var(--line) !important; border-bottom: 1px solid var(--line); } .stats li:nth-child(2n) { border-right: 0 !important; } .stats li:nth-last-child(-n+2) { border-bottom: 0; } .stats strong { font-size: 1.55rem; } }
+
+/* sections */
+section.block { padding: 4.2rem 0 0; }
+.sec-head { max-width: 46rem; margin-bottom: 1.8rem; }
+.sec-num { font-family: var(--mono); font-size: .8rem; color: var(--faint); letter-spacing: .08em; }
+h2.sec { font-size: clamp(1.6rem, 3.2vw, 2.25rem); line-height: 1.15; margin: .35rem 0 .7rem; letter-spacing: -.01em; }
+.sec-head p { color: var(--muted); margin: 0; font-size: 1.1rem; }
+h3 { line-height: 1.25; }
+
+/* fit table */
+.fit { display: grid; gap: .7rem; }
+.fit-row { display: grid; grid-template-columns: 15rem 1fr 12rem; gap: 1.3rem; align-items: start; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 1.05rem 1.25rem; }
+.fit-row .need { font-weight: 700; }
+.fit-row .need small { display: block; font-weight: 400; color: var(--faint); font-family: var(--mono); font-size: .74rem; letter-spacing: .04em; text-transform: uppercase; margin-bottom: .15rem; }
+.fit-row p { margin: 0; color: var(--muted); }
+.fit-row .proof { font-size: .92rem; }
+.fit-row.next { border-style: dashed; background: transparent; }
+.fit-row.next .need small { color: var(--bench); }
+@media (max-width: 860px) { .fit-row { grid-template-columns: 1fr; gap: .4rem; } }
+
+/* taxonomy */
+.tax { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+@media (max-width: 820px) { .tax { grid-template-columns: 1fr; } }
+.tcard { background: var(--card); border: 1px solid var(--line); border-top: 4px solid var(--c); border-radius: 12px; padding: 1.3rem 1.35rem 1.2rem; }
+.tcard .tag { display: inline-block; font-family: var(--mono); font-size: .76rem; font-weight: 600; letter-spacing: .08em; color: var(--c); background: var(--t); border-radius: 6px; padding: .18rem .55rem; }
+.tcard h3 { margin: .65rem 0 .35rem; font-size: 1.25rem; }
+.tcard > p { margin: 0 0 .9rem; color: var(--muted); }
+.case { border-left: 2px solid var(--line); padding: .1rem 0 .1rem .9rem; margin: .7rem 0 0; }
+.case > b { display: block; }
+.case p { margin: .15rem 0 0; color: var(--muted); font-size: .97rem; }
+.case .num { font-family: var(--mono); font-size: .86rem; color: var(--ink); background: var(--code-bg); border-radius: 4px; padding: .05em .35em; white-space: nowrap; }
+.t-product { --c: var(--product); --t: var(--tint-product); }
+.t-bench { --c: var(--bench); --t: var(--tint-bench); }
+.t-test { --c: var(--test); --t: var(--tint-test); }
+.t-gap { --c: var(--gap); --t: var(--tint-gap); }
+.callout { margin-top: 1.2rem; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.25rem; color: var(--muted); }
+.callout strong { color: var(--ink); }
+
+/* hunts */
+.hunts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.2rem; }
+@media (max-width: 900px) { .hunts { grid-template-columns: 1fr; } }
+.hunt { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 1.5rem 1.5rem 1.3rem; box-shadow: var(--shadow); }
+.hunt .meta { font-family: var(--mono); font-size: .76rem; color: var(--faint); letter-spacing: .05em; text-transform: uppercase; }
+.hunt h3 { font-size: 1.4rem; margin: .4rem 0 1rem; }
+.steps { list-style: none; margin: 0; padding: 0; position: relative; }
+.steps::before { content: ""; position: absolute; left: .42rem; top: .4rem; bottom: .4rem; width: 2px; background: var(--line); }
+.steps li { position: relative; padding: 0 0 .95rem 1.75rem; }
+.steps li::before { content: ""; position: absolute; left: 0; top: .38rem; width: .86rem; height: .86rem; border-radius: 50%; background: var(--card); border: 2px solid var(--faint); }
+.steps li.wrong::before { border-color: var(--product); background: var(--tint-product); }
+.steps li.cause::before { border-color: var(--test); background: var(--test); }
+.steps li.fix::before { border-color: var(--pass); background: var(--pass); }
+.steps .lbl { font-family: var(--mono); font-size: .74rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); display: block; }
+.steps li.wrong .lbl { color: var(--product); }
+.steps li.cause .lbl { color: var(--test); }
+.steps li.fix .lbl { color: var(--pass); }
+.steps p { margin: .1rem 0 0; color: var(--muted); font-size: .98rem; }
+.result { display: flex; align-items: baseline; gap: .8rem; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: .9rem; margin-top: .2rem; }
+.result .big { font-size: 1.55rem; font-weight: 800; color: var(--pass); font-family: var(--mono); letter-spacing: -.02em; }
+.result span { color: var(--muted); font-size: .95rem; }
+.lesson { margin-top: 1.2rem; font-size: 1.12rem; border-left: 4px solid var(--navy); padding: .3rem 0 .3rem 1rem; max-width: 52rem; }
+
+/* diagrams */
+.figure { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 1.4rem; box-shadow: var(--shadow); }
+.figure svg { width: 100%; height: auto; display: block; }
+.figure figcaption { color: var(--muted); font-size: .95rem; margin-top: .9rem; }
+.svg-scroll { overflow-x: auto; }
+.svg-scroll svg { min-width: 760px; }
+svg text { font-family: var(--sans); fill: var(--ink); }
+svg .mono { font-family: var(--mono); }
+svg .muted { fill: var(--muted); }
+svg .box { fill: var(--bg); stroke: var(--line); stroke-width: 1.5; }
+svg .box-strong { fill: var(--card); stroke: var(--navy); stroke-width: 1.5; }
+svg .line { stroke: var(--faint); stroke-width: 1.6; fill: none; }
+svg .arrow { fill: var(--faint); }
+svg .pass { fill: var(--pass); }
+svg .gate { fill: var(--tint-bench); stroke: var(--bench); stroke-width: 1.5; }
+svg .suspect { fill: var(--tint-test); stroke: var(--test); stroke-width: 1.5; }
+svg .defect { fill: var(--tint-product); stroke: var(--product); stroke-width: 1.5; }
+svg .ok { fill: var(--tint-gap); stroke: var(--gap); stroke-width: 1.5; }
+.two-col { display: grid; grid-template-columns: 1.1fr .9fr; gap: 1.5rem; align-items: start; margin-top: 1.2rem; }
+@media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+.ticks { list-style: none; padding: 0; margin: 0; }
+.ticks li { padding: .55rem 0 .55rem 1.7rem; position: relative; border-bottom: 1px solid var(--line); color: var(--muted); }
+.ticks li:last-child { border-bottom: 0; }
+.ticks li::before { content: "→"; position: absolute; left: 0; color: var(--navy); font-weight: 700; }
+.ticks li b { color: var(--ink); }
+
+/* release */
+.rel { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+@media (max-width: 900px) { .rel { grid-template-columns: 1fr; } }
+.rcard { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 1.25rem; }
+.rcard h3 { margin: 0 0 .4rem; font-size: 1.12rem; }
+.rcard p { margin: 0; color: var(--muted); font-size: .98rem; }
+.rcard .figure-num { font-family: var(--mono); font-weight: 600; color: var(--navy-ink); font-size: 1.35rem; display: block; margin-bottom: .3rem; }
+
+/* limits */
+.limits { display: grid; grid-template-columns: repeat(2, 1fr); gap: .8rem 2rem; list-style: none; padding: 0; margin: 0; }
+@media (max-width: 760px) { .limits { grid-template-columns: 1fr; } }
+.limits li { padding-left: 1.6rem; position: relative; color: var(--muted); }
+.limits li::before { content: "!"; position: absolute; left: 0; top: .15rem; width: 1.1rem; height: 1.1rem; border-radius: 50%; background: var(--tint-bench); color: var(--bench); font-weight: 800; font-size: .75rem; display: grid; place-items: center; }
+.limits b { color: var(--ink); }
+
+/* about */
+.about { margin: 4.2rem 0 0; background: linear-gradient(160deg, var(--hero-a), var(--hero-b)); color: var(--hero-ink); border-radius: 18px; padding: 2.4rem; display: grid; grid-template-columns: 1.3fr .7fr; gap: 2rem; align-items: center; }
+@media (max-width: 860px) { .about { grid-template-columns: 1fr; padding: 1.6rem; } }
+.about h2 { margin: .3rem 0 .8rem; font-size: clamp(1.5rem, 3vw, 2rem); line-height: 1.2; }
+.about p { color: #c9d6e8; margin: 0 0 .7rem; }
+.about .kicker { margin-bottom: 0; }
+.about .btns { flex-direction: column; margin: 0; }
+.about .btn { justify-content: center; }
+footer { color: var(--faint); font-size: .9rem; padding: 2.2rem 0 2.6rem; }
+footer .wrap { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+
+<div class="topbar"><div class="wrap">
+  <a href="../index.html">← Ketan Bakshi · Portfolio</a>
+  <nav aria-label="On this page">
+    <a href="#fit">Fit</a><a href="#triage">Triage</a><a href="#hunts">Root causes</a><a href="#levels">Levels</a><a href="#agentic">Agentic AI</a><a href="#limits">Limits</a>
+  </nav>
+</div></div>
+
+<header class="hero">
+  <div class="wrap">
+    <div>
+      <p class="kicker">Safe-Stop Bench · Autonomous-vehicle (AV) safety-layer testing</p>
+      <h1>Not every <span class="red">red</span> test is a bug.</h1>
+      <p class="lede">I built a test bench that tells them apart. The same 56 fault scenarios run from Python SiL to two ESP32 boards on a real CAN bus, and every failure is sorted into <b>product defect</b>, <b>test error</b>, <b>bench fault</b> or <b>coverage gap</b> before anyone files a ticket.</p>
+      <div class="btns">
+        <a class="btn btn-primary" href="https://github.com/ketan01bakshi-dev/safe-stop-bench" rel="noopener">View the code on GitHub</a>
+        <a class="btn btn-ghost" href="../demos/safe-stop-report.html">Sample test report</a>
+        <a class="btn btn-ghost" href="../assets/resume.docx" download="Ketan_Bakshi_Resume.docx">Résumé (Word)</a>
+      </div>
+      <ul class="chips" aria-label="About this project">
+        <li>Built with Claude Code to my spec</li><li>Synthetic data</li><li>MIT licence</li><li>CI on every push</li>
+      </ul>
+    </div>
+    <div class="strip-card" aria-label="Reference run result">
+      <h2>Reference run · 56 scenarios</h2>
+      <div class="cells" id="cells" role="img" aria-label="55 scenarios pass, 1 known finding"></div>
+      <div class="strip-legend"><span>55 pass</span><span class="k">1 known finding, documented, not hidden</span></div>
+      <p class="strip-note">An autonomous vehicle's planner sends protected commands; the safety controller (the device under test) checks every one and owns the safe stop. Faults are injected; a vehicle model and an oracle decide pass or fail.</p>
+    </div>
+  </div>
+</header>
+
+<div class="wrap stats" aria-label="Key numbers">
+  <ul>
+    <li><strong>56</strong><span>fault scenarios, traced to requirements</span></li>
+    <li><strong>7</strong><span>test levels, SiL to real-bus HiL</span></li>
+    <li><strong>14/14</strong><span>seeded bugs caught by the suite</span></li>
+    <li><strong>56/56</strong><span>exact back-to-back match, checked on every push</span></li>
+    <li><strong>12/12</strong><span>OTA release checks on the real board</span></li>
+    <li><strong>0/22</strong><span>TLS handshakes stall the control loop after the root-cause fix (was 18/19)</span></li>
+  </ul>
+</div>
+
+<main class="wrap">
+
+<section class="block" id="fit">
+  <div class="sec-head">
+    <span class="sec-num">01 /</span>
+    <h2 class="sec">Built around a triage lead's working day</h2>
+    <p>What a simulation-testing and failure-triage team needs, and where this bench already does it. One row is not built yet, and says so.</p>
+  </div>
+  <div class="fit">
+    <div class="fit-row">
+      <div class="need"><small>Gate</small>Pre-merge quality gate</div>
+      <p>Every push runs the controller as a separate process over CAN, in lockstep, and fails unless its timeline matches the Python reference <b>exactly</b>, cycle by cycle, on all 56 scenarios. Seven CI jobs, Python 3.10 and 3.12.</p>
+      <p class="proof"><a href="https://github.com/ketan01bakshi-dev/safe-stop-bench/actions" rel="noopener">Public CI, green</a></p>
+    </div>
+    <div class="fit-row">
+      <div class="need"><small>Classify</small>Isolate the failing layer</div>
+      <p>Every non-PASS is labelled <b>PRODUCT</b>, <b>TEST</b>, <b>BENCH</b> or <b>GAP</b>. A failure on a wrong or silent board, or one that needed a rerun, becomes <i>suspect bench</i> and is never drafted as a defect.</p>
+      <p class="proof"><a href="#triage">Four classes, real cases</a></p>
+    </div>
+    <div class="fit-row">
+      <div class="need"><small>Root cause</small>Signal-level analysis</div>
+      <p>Per-cycle traces (MDF4 export), board-side tick-hook and timing instruments, passive bus audits with counter and CRC checks. Two hardware root causes found this way, both after a first diagnosis proved wrong.</p>
+      <p class="proof"><a href="#hunts">Two root-cause hunts</a></p>
+    </div>
+    <div class="fit-row">
+      <div class="need"><small>Tooling</small>Python for logs, triage, reports</div>
+      <p>Scenario runner, back-to-back comparer, HTML report, overflow audit, stall watcher, preflight with an error catalogue, failure-cluster dashboard and a release verdict: all Python, 150+ automated tests.</p>
+      <p class="proof"><a href="../demos/safe-stop-report.html">Sample report</a></p>
+    </div>
+    <div class="fit-row">
+      <div class="need"><small>Agentic AI</small>AI in the triage loop</div>
+      <p>An LLM drafts the test basis and cases; code validates them; the bench runs them; a "test the test" rerun on a healthy controller catches wrong expectations before they become false defects. Humans approve at hash-bound gates.</p>
+      <p class="proof"><a href="#agentic">How the loop works</a></p>
+    </div>
+    <div class="fit-row">
+      <div class="need"><small>Closure</small>Drive release issues to a decision</div>
+      <p>One release verdict (GO, GO WITH RISKS, NO GO) built from every piece of evidence, with the remaining limits stated in the verdict itself rather than left in someone's head.</p>
+      <p class="proof"><a href="#release">Release layer</a></p>
+    </div>
+    <div class="fit-row next">
+      <div class="need"><small>Next, not built</small>Automated regression isolation</div>
+      <p>Every version is tagged, and the exact back-to-back check is already a deterministic pass/fail oracle, which is exactly what <code>git bisect run</code> needs to pin a regression to one change. That script is the next step; it isn't in the repo yet.</p>
+      <p class="proof">Honest gap</p>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="triage">
+  <div class="sec-head">
+    <span class="sec-num">02 /</span>
+    <h2 class="sec">Four reasons a test goes red</h2>
+    <p>Only one of them is a product bug. These are real cases from this bench's history, not hypotheticals.</p>
+  </div>
+  <div class="tax">
+    <article class="tcard t-product">
+      <span class="tag">PRODUCT</span>
+      <h3>The code is wrong. Fix it.</h3>
+      <p>The defect is in the device under test, and a test that fails for this reason is doing its job.</p>
+      <div class="case"><b>Power cut inside an update</b><p>Cutting power at each persistent write found that the update path could boot a new image with <b>no probation</b>, so an unhealthy image would never roll back. Writes reordered; the cut-window checks now pass on the real board.</p></div>
+      <div class="case"><b>Two valid commands in one cycle</b><p>A second, valid command in the same cycle skipped the steering rate limit: <span class="num">25° in 20 ms</span>. Fixed in the Python reference and the C++ core; all existing tests still pass.</p></div>
+    </article>
+    <article class="tcard t-bench">
+      <span class="tag">BENCH</span>
+      <h3>The rig failed, not the product.</h3>
+      <p>Treating these as defects wastes a developer's day and erodes trust in the gate.</p>
+      <div class="case"><b>A dropped CAN link</b><p>The first full HiL run produced <span class="num">48 false FAILs</span> from a lost link. An observer-loss guard now marks the run as a bench fault instead.</p></div>
+      <div class="case"><b>A busy laptop</b><p>Real-time runs on a loaded PC: <span class="num">31/55</span> before reruns. Lockstep (the bench waits for the controller's own cycle counter): <span class="num">54/55 + 1 known, 0 reruns</span>.</p></div>
+    </article>
+    <article class="tcard t-test">
+      <span class="tag">TEST</span>
+      <h3>The oracle or the analyzer was wrong.</h3>
+      <p>The product behaved; the measurement or the expectation didn't.</p>
+      <div class="case"><b>A measurement artefact</b><p>Steering slew was judged on the PC's 20 ms clock, so 1 ms of arrival jitter turned a legal 48°/s into 72°/s. Judged on the board's own cycle counter: <span class="num">2/8 false fails → 0/12</span>.</p></div>
+      <div class="case"><b>An AI-drafted expectation</b><p>Running without a human, the LLM drafted a test whose expected result was wrong. Re-running the case on a healthy controller flags it as <i>suspect</i>; it is redrafted with the evidence, never filed.</p></div>
+    </article>
+    <article class="tcard t-gap">
+      <span class="tag">GAP</span>
+      <h3>Nothing failed, but something should have.</h3>
+      <p>The requirement or the coverage is missing. These are the findings worth escalating.</p>
+      <div class="case"><b>A loaded vehicle</b><p>With a dynamic plant, <span class="num">+800 kg</span> makes a planned stop <span class="num">34%</span> longer with no diagnosis, and at +900 kg the brake check mistakes payload for a brake fault.</p></div>
+      <div class="case"><b>A supplier-style model</b><p>A black-box FMU with other names, units and state codes exposed <span class="num">2 cold-start failures</span> the scenario matrix had never covered.</p></div>
+    </article>
+  </div>
+  <p class="callout"><strong>Why it matters in a pre-merge gate:</strong> a gate that files bench faults and wrong expectations as defects trains developers to ignore it. Classifying first keeps the red signal meaningful.</p>
+</section>
+
+<section class="block" id="hunts">
+  <div class="sec-head">
+    <span class="sec-num">03 /</span>
+    <h2 class="sec">Two root-cause hunts on real hardware</h2>
+    <p>Two ESP32-S3 boards on a 500 kbit/s CAN bus: board B is the safety controller, board A reads B's outputs from the bus. In both hunts the first explanation was wrong.</p>
+  </div>
+  <div class="hunts">
+    <article class="hunt">
+      <span class="meta">Hunt 1 · Ghost status frames</span>
+      <h3>Stale frames that faked a recovery</h3>
+      <ol class="steps">
+        <li><span class="lbl">Symptom</span><p>Board A saw old status frames reappear, turning a latched STOP into brief fake NORMAL blips. One HiL run dropped to 26/54.</p></li>
+        <li class="wrong"><span class="lbl">Hypothesis 1 · rejected</span><p>Worn jumper wires. A dedicated SPI stress test showed <b>0 SPI errors</b> on both boards.</p></li>
+        <li class="wrong"><span class="lbl">Hypothesis 2 · wrong board</span><p>First attributed to board B sending duplicates. The evidence pointed to the receiver, board A.</p></li>
+        <li class="cause"><span class="lbl">Root cause</span><p>A's CAN-controller flag register read <code>0x02</code> for <code>0x01</code> at frame arrival, so the driver read a stale receive buffer.</p></li>
+        <li class="fix"><span class="lbl">Fix &amp; guard</span><p>Buffer rollover off, read one buffer only; then an alive counter + CRC-8 on the status frame, so a stale frame is rejected even on old firmware.</p></li>
+      </ol>
+      <div class="result"><span class="big">37–50 → 0</span><span>stale duplicates per 30 s</span></div>
+    </article>
+    <article class="hunt">
+      <span class="meta">Hunt 2 · The 190 ms stall</span>
+      <h3>A network handshake that froze the control loop</h3>
+      <ol class="steps">
+        <li><span class="lbl">Symptom</span><p>The 10 ms control loop on board B stalled 54–190 ms whenever MQTT connected over TLS; catch-up sends then overflowed the CAN transmit buffers and frames arrived out of order.</p></li>
+        <li class="wrong"><span class="lbl">First fix · didn't hold</span><p>Lowering the MQTT task's priority looked fixed over 2 h idle. Retested properly: <b>18 of 19 handshakes</b> still stalled.</p></li>
+        <li class="cause"><span class="lbl">Root cause</span><p>Per-core FreeRTOS tick-hook tracing showed the MQTT task running on the control core, boosted to priority 23 by <b>priority inheritance</b> while it held its lock for the whole connect. No priority setting can fix that.</p></li>
+        <li class="fix"><span class="lbl">Fix &amp; guard</span><p>Pin the task to the other core with a linker wrap, and a firmware self-check that refuses to start the radio if the pin is missing.</p></li>
+        <li class="fix"><span class="lbl">Re-verified</span><p>Release checks REL-01 to REL-12 rerun on the new firmware: 12/12.</p></li>
+      </ol>
+      <div class="result"><span class="big">18/19 → 0/22</span><span>handshakes that stalled the loop</span></div>
+    </article>
+  </div>
+  <p class="lesson">The method, not luck: state a hypothesis, build the instrument that can reject it, and prove the fix with the same instrument.</p>
+</section>
+
+<section class="block" id="levels">
+  <div class="sec-head">
+    <span class="sec-num">04 /</span>
+    <h2 class="sec">One suite, seven levels, compared back to back</h2>
+    <p>The cheapest level that can catch a fault runs first. Each level is compared with the Python reference cycle by cycle, so a difference is a finding, not a guess.</p>
+  </div>
+  <figure class="figure">
+    <div class="svg-scroll">
+    <svg viewBox="0 0 1060 250" role="img" aria-labelledby="lv-t">
+      <title id="lv-t">Seven test levels from Python SiL to two ESP32-S3 boards on a real CAN bus, each compared with the reference</title>
+      <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrow"/></marker></defs>
+      <text x="0" y="22" class="mono muted" font-size="12">CHEAPEST · FASTEST</text>
+      <text x="1060" y="22" class="mono muted" font-size="12" text-anchor="end">CLOSEST TO THE VEHICLE</text>
+      <g font-size="14">
+        <rect x="0" y="40" width="136" height="96" rx="10" class="box-strong"/>
+        <text x="68" y="72" text-anchor="middle" font-weight="700">Python SiL</text><text x="68" y="94" text-anchor="middle" class="muted" font-size="12.5">reference model</text><text x="68" y="118" text-anchor="middle" class="mono pass" font-size="12.5">55/56 + 1</text>
+        <rect x="154" y="40" width="136" height="96" rx="10" class="box"/>
+        <text x="222" y="72" text-anchor="middle" font-weight="700">CAN process</text><text x="222" y="94" text-anchor="middle" class="muted" font-size="12.5">black box, DBC</text><text x="222" y="118" text-anchor="middle" class="mono pass" font-size="12.5">b2b 56/56</text>
+        <rect x="308" y="40" width="136" height="96" rx="10" class="box"/>
+        <text x="376" y="72" text-anchor="middle" font-weight="700">ROS 2 node</text><text x="376" y="94" text-anchor="middle" class="muted" font-size="12.5">topics only</text><text x="376" y="118" text-anchor="middle" class="mono pass" font-size="12.5">b2b 54/54</text>
+        <rect x="462" y="40" width="136" height="96" rx="10" class="box"/>
+        <text x="530" y="72" text-anchor="middle" font-weight="700">FMI 2.0 FMU</text><text x="530" y="94" text-anchor="middle" class="muted" font-size="12.5">supplied vECU</text><text x="530" y="118" text-anchor="middle" class="mono pass" font-size="12.5">b2b 56/56</text>
+        <rect x="616" y="40" width="136" height="96" rx="10" class="box"/>
+        <text x="684" y="72" text-anchor="middle" font-weight="700">C++ core</text><text x="684" y="94" text-anchor="middle" class="muted" font-size="12.5">firmware on PC</text><text x="684" y="118" text-anchor="middle" class="mono pass" font-size="12.5">b2b 56/56</text>
+        <rect x="770" y="40" width="136" height="96" rx="10" class="box"/>
+        <text x="838" y="72" text-anchor="middle" font-weight="700">Node logic</text><text x="838" y="94" text-anchor="middle" class="muted" font-size="12.5">over link protocol</text><text x="838" y="118" text-anchor="middle" class="mono pass" font-size="12.5">b2b 56/56</text>
+        <rect x="924" y="40" width="136" height="96" rx="10" class="box-strong"/>
+        <text x="992" y="72" text-anchor="middle" font-weight="700">ESP32-S3 HiL</text><text x="992" y="94" text-anchor="middle" class="muted" font-size="12.5">real CAN bus</text><text x="992" y="118" text-anchor="middle" class="mono pass" font-size="12.5">b2b 55/55</text>
+      </g>
+      <g class="line" marker-end="url(#ar)">
+        <path d="M136 88 H152"/><path d="M290 88 H306"/><path d="M444 88 H460"/><path d="M598 88 H614"/><path d="M752 88 H768"/><path d="M906 88 H922"/>
+      </g>
+      <path d="M68 136 V176 H992 V140" class="line" stroke-dasharray="5 5"/>
+      <rect x="350" y="160" width="360" height="34" rx="17" class="box-strong"/>
+      <text x="530" y="182" text-anchor="middle" font-size="13.5" font-weight="600">back-to-back: same timeline, same end state</text>
+      <text x="530" y="230" text-anchor="middle" class="muted" font-size="12.5">Counts differ where a level was last run on an earlier, smaller suite (ROS 2 on 54 scenarios, HiL on 55).</text>
+    </svg>
+    </div>
+    <figcaption>Also on the bench: a real reset of the controller mid-scenario (it reboots into a latched stop), a GPIO watchdog wire, E2E protection (CRC + alive counter) on every protected frame, a dynamic vehicle model, fuzzing and a mutation score.</figcaption>
+  </figure>
+</section>
+
+<section class="block" id="agentic">
+  <div class="sec-head">
+    <span class="sec-num">05 /</span>
+    <h2 class="sec">Agentic AI that can't file a false defect on its own</h2>
+    <p>Rules decide; the model drafts. The model never gives a verdict, and every artifact it touches passes through code checks and a human gate.</p>
+  </div>
+  <figure class="figure">
+    <div class="svg-scroll">
+    <svg viewBox="0 0 1060 300" role="img" aria-labelledby="ag-t">
+      <title id="ag-t">Agentic test pipeline: requirement, LLM draft, code validation, human gate, bench run, test the test, then pass, suspect with redraft, or defect to GitHub Issues</title>
+      <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrow"/></marker></defs>
+      <g font-size="14">
+        <rect x="0" y="30" width="130" height="74" rx="10" class="box"/>
+        <text x="65" y="62" text-anchor="middle" font-weight="700">Requirement</text><text x="65" y="84" text-anchor="middle" class="muted" font-size="12.5">ID, ASIL, limits</text>
+        <rect x="160" y="30" width="150" height="74" rx="10" class="suspect"/>
+        <text x="235" y="62" text-anchor="middle" font-weight="700">LLM drafts</text><text x="235" y="84" text-anchor="middle" class="muted" font-size="12.5">test basis + cases</text>
+        <rect x="340" y="30" width="160" height="74" rx="10" class="box-strong"/>
+        <text x="420" y="62" text-anchor="middle" font-weight="700">Code validates</text><text x="420" y="84" text-anchor="middle" class="muted" font-size="12.5">ISTQB: EP, BVA, DT, ST</text>
+        <rect x="530" y="30" width="150" height="74" rx="10" class="gate"/>
+        <text x="605" y="62" text-anchor="middle" font-weight="700">Human gate</text><text x="605" y="84" text-anchor="middle" class="mono muted" font-size="12">SHA-256 bound</text>
+        <rect x="710" y="30" width="140" height="74" rx="10" class="box-strong"/>
+        <text x="780" y="62" text-anchor="middle" font-weight="700">Bench runs</text><text x="780" y="84" text-anchor="middle" class="muted" font-size="12.5">any level</text>
+        <rect x="880" y="30" width="180" height="74" rx="10" class="box-strong"/>
+        <text x="970" y="62" text-anchor="middle" font-weight="700">Test the test</text><text x="970" y="84" text-anchor="middle" class="muted" font-size="12.5">rerun on healthy ref</text>
+      </g>
+      <g class="line" marker-end="url(#ar2)">
+        <path d="M130 67 H158"/><path d="M310 67 H338"/><path d="M500 67 H528"/><path d="M680 67 H708"/><path d="M850 67 H878"/>
+      </g>
+      <path d="M970 104 V140" class="line" marker-end="url(#ar2)"/>
+      <g font-size="14">
+        <rect x="560" y="146" width="150" height="64" rx="10" class="ok"/>
+        <text x="635" y="174" text-anchor="middle" font-weight="700">PASS</text><text x="635" y="195" text-anchor="middle" class="muted" font-size="12.5">evidence kept</text>
+        <rect x="735" y="146" width="150" height="64" rx="10" class="suspect"/>
+        <text x="810" y="174" text-anchor="middle" font-weight="700">SUSPECT</text><text x="810" y="195" text-anchor="middle" class="muted" font-size="12.5">test was wrong</text>
+        <rect x="910" y="146" width="150" height="64" rx="10" class="defect"/>
+        <text x="985" y="174" text-anchor="middle" font-weight="700">DEFECT</text><text x="985" y="195" text-anchor="middle" class="muted" font-size="12.5">GitHub Issue</text>
+      </g>
+      <path d="M970 140 H635 V144" class="line" marker-end="url(#ar2)"/>
+      <path d="M810 140 V144" class="line" marker-end="url(#ar2)"/>
+      <path d="M985 140 V144" class="line" marker-end="url(#ar2)"/>
+      <path d="M810 210 V250 H235 V106" class="line" stroke-dasharray="5 5" marker-end="url(#ar2)"/>
+      <text x="520" y="272" text-anchor="middle" class="muted" font-size="13">bounded auto-redraft: the rejection carries the bench's own evidence, facts only</text>
+      <path d="M985 210 V250 H1040" class="line" stroke-dasharray="2 4"/>
+      <text x="1040" y="244" text-anchor="end" class="muted" font-size="12">next campaign's error-guessing cases</text>
+    </svg>
+    </div>
+  </figure>
+  <div class="two-col">
+    <ul class="ticks">
+      <li><b>Caught its own mistake.</b> On one requirement the model's first draft modelled the fault as a single counter jump. The bench rejected it with evidence, the model redrafted it as 30 ms out-of-order delivery, all 7 cases passed, and nothing false was filed.</li>
+      <li><b>Learns from history.</b> Defects already in the tracker feed error-guessing cases into the next campaign (0 → 8 such cases).</li>
+      <li><b>Auditable.</b> Each approval is bound to the SHA-256 of the exact artifact approved. Change the artifact and the approval no longer applies.</li>
+    </ul>
+    <div class="callout" style="margin-top:0">
+      <strong>Where it came from.</strong> This loop began as a rebuild, on synthetic data, of an LLM + RAG test pipeline I prototyped at work for HIL campaigns, where engineers needed earlier, similar failures surfaced so they stopped re-solving the same root cause. Here it runs end to end on this bench, with no employer code or data.
+    </div>
+  </div>
+</section>
+
+<section class="block" id="release">
+  <div class="sec-head">
+    <span class="sec-num">06 /</span>
+    <h2 class="sec">From a passing test to a release decision</h2>
+    <p>Layers added on top of the core bench, each with its own requirements, its own matrix and evidence that feeds one verdict.</p>
+  </div>
+  <div class="rel">
+    <div class="rcard"><span class="figure-num">12/12</span><h3>OTA update of the controller</h3><p>A/B slots; SHA-256 plus HMAC over hash, size and version (no re-labelling an old image); a trial boot that commits only after 3 s healthy; rollback; resume after a lost chunk; power cut at every persistent write. Over the board's own Wi-Fi with TLS.</p></div>
+    <div class="rcard"><span class="figure-num">0 false alarms</span><h3>Security matrix</h3><p>Seven attack kinds on the planner bus (flood, fuzzing, spoofing, replay, timing glitches, signal ramp) against an intrusion detector: no false alarms on 22 held-out clean runs, 12/12 on the real boards. One finding is tracked openly rather than hidden: a slow signal ramp that neither layer detects.</p></div>
+    <div class="rcard"><span class="figure-num">Preflight</span><h3>Bench health before every HiL run</h3><p>Port and firmware checks against an inventory, a UDS version read over the real bus and a partition audit. A failed preflight blocks the run and prints fixes from an error catalogue seeded from real bring-up faults.</p></div>
+  </div>
+</section>
+
+<section class="block" id="limits">
+  <div class="sec-head">
+    <span class="sec-num">07 /</span>
+    <h2 class="sec">What this does not prove</h2>
+    <p>Stated up front, the same way the release verdict states its limits.</p>
+  </div>
+  <ul class="limits">
+    <li><b>Synthetic data, illustrative limits.</b> No real vehicle values, no employer code or data. It's a method demonstrator, not a safety product.</li>
+    <li><b>A safety layer, not a planner.</b> It tests the controller around an AV planner, not perception, prediction or planning.</li>
+    <li><b>AI-assisted.</b> I set the problem, the requirements and the acceptance criteria and judged every result; Claude Code wrote most of the code. I can walk through every module.</li>
+    <li><b>Two development boards.</b> Classic CAN at 500 kbit/s with lab wiring. CAN FD and a physical supply cut are prepared, not yet run.</li>
+  </ul>
+</section>
+
+<section class="about" aria-label="About the author">
+  <div>
+    <p class="kicker">Behind the bench</p>
+    <h2>Ketan Bakshi, automotive XiL test lead</h2>
+    <p>10+ years finding out why software fails on the bench and driving the fix to closure. At Daimler Truck I lead MiL, SiL and HiL test strategy for adaptive cruise control, emergency braking and e-mobility functions, run shared HiL and SiL benches used by five teams, and halved verification cycle time through structured root-cause analysis.</p>
+    <p>This bench is how I work, made public: classify before you file, prove the fix with the instrument that found it, and let AI draft but never decide.</p>
+  </div>
+  <div class="btns">
+    <a class="btn btn-primary" href="mailto:ketan01bakshi@gmail.com?subject=Safe-Stop%20Bench">Email me</a>
+    <a class="btn btn-ghost" href="https://linkedin.com/in/ketan-bakshi-b9380950" rel="noopener">LinkedIn</a>
+    <a class="btn btn-ghost" href="https://github.com/ketan01bakshi-dev/safe-stop-bench" rel="noopener">Code on GitHub</a>
+    <a class="btn btn-ghost" href="../index.html">Full portfolio</a>
+  </div>
+</section>
+
+</main>
+
+<footer><div class="wrap">
+  <span>© 2026 Ketan Bakshi · Code under the MIT licence</span>
+  <span>Built with Claude Code · Synthetic data throughout</span>
+</div></footer>
+
+<script>
+(function () {
+  var host = document.getElementById("cells");
+  if (!host) return;
+  var html = "";
+  for (var i = 0; i < 56; i++) html += '<span class="cell' + (i === 41 ? " known" : "") + '"></span>';
+  host.innerHTML = html;
+})();
+</script>
+</body>
+</html>
