@@ -196,6 +196,9 @@ svg .gate { fill: var(--tint-bench); stroke: var(--bench); stroke-width: 1.5; }
 svg .suspect { fill: var(--tint-test); stroke: var(--test); stroke-width: 1.5; }
 svg .defect { fill: var(--tint-product); stroke: var(--product); stroke-width: 1.5; }
 svg .ok { fill: var(--tint-gap); stroke: var(--gap); stroke-width: 1.5; }
+svg .loop { fill: none; stroke-width: 1.6; stroke-dasharray: 6 5; }
+svg .loop-p { stroke: var(--product); }
+svg .loop-t { stroke: var(--test); }
 .two-col { display: grid; grid-template-columns: 1.1fr .9fr; gap: 1.5rem; align-items: start; margin-top: 1.2rem; }
 @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
 .ticks { list-style: none; padding: 0; margin: 0; }
@@ -446,42 +449,52 @@ footer .wrap { display: flex; justify-content: space-between; gap: 1rem; flex-wr
   </div>
   <figure class="figure">
     <div class="svg-scroll">
-    <svg viewBox="0 0 1060 300" role="img" aria-labelledby="ag-t">
-      <title id="ag-t">Agentic test pipeline: requirement, LLM draft, code validation, human gate, bench run, test the test, then pass, suspect with redraft, or defect to GitHub Issues</title>
-      <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrow"/></marker></defs>
+    <svg viewBox="0 0 1066 330" role="img" aria-labelledby="ag-t">
+      <title id="ag-t">Agentic test pipeline: requirement, LLM draft, code validation, human gate, bench run, test the test, then pass, defect to GitHub Issues (whose history feeds the next campaign's error-guessing cases), or suspect, which sends the draft back to the LLM with the bench's evidence</title>
+      <defs>
+        <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrow"/></marker>
+        <marker id="ar2p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" style="fill: var(--product)"/></marker>
+        <marker id="ar2t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" style="fill: var(--test)"/></marker>
+      </defs>
+      <!-- main flow: six boxes, 30 px gaps -->
       <g font-size="14">
         <rect x="0" y="30" width="130" height="74" rx="10" class="box"/>
         <text x="65" y="62" text-anchor="middle" font-weight="700">Requirement</text><text x="65" y="84" text-anchor="middle" class="muted" font-size="12.5">ID, ASIL, limits</text>
         <rect x="160" y="30" width="150" height="74" rx="10" class="suspect"/>
         <text x="235" y="62" text-anchor="middle" font-weight="700">LLM drafts</text><text x="235" y="84" text-anchor="middle" class="muted" font-size="12.5">test basis + cases</text>
-        <rect x="340" y="30" width="160" height="74" rx="10" class="box-strong"/>
-        <text x="420" y="62" text-anchor="middle" font-weight="700">Code validates</text><text x="420" y="84" text-anchor="middle" class="muted" font-size="12.5">ISTQB: EP, BVA, DT, ST</text>
-        <rect x="530" y="30" width="150" height="74" rx="10" class="gate"/>
-        <text x="605" y="62" text-anchor="middle" font-weight="700">Human gate</text><text x="605" y="84" text-anchor="middle" class="mono muted" font-size="12">SHA-256 bound</text>
-        <rect x="710" y="30" width="140" height="74" rx="10" class="box-strong"/>
-        <text x="780" y="62" text-anchor="middle" font-weight="700">Bench runs</text><text x="780" y="84" text-anchor="middle" class="muted" font-size="12.5">any level</text>
-        <rect x="880" y="30" width="180" height="74" rx="10" class="box-strong"/>
-        <text x="970" y="62" text-anchor="middle" font-weight="700">Test the test</text><text x="970" y="84" text-anchor="middle" class="muted" font-size="12.5">rerun on healthy ref</text>
+        <rect x="340" y="30" width="180" height="74" rx="10" class="box-strong"/>
+        <text x="430" y="62" text-anchor="middle" font-weight="700">Code validates</text><text x="430" y="84" text-anchor="middle" class="muted" font-size="12">ISTQB: EP, BVA, DT, ST, EG</text>
+        <rect x="550" y="30" width="150" height="74" rx="10" class="gate"/>
+        <text x="625" y="62" text-anchor="middle" font-weight="700">Human gate</text><text x="625" y="84" text-anchor="middle" class="mono muted" font-size="12">SHA-256 bound</text>
+        <rect x="730" y="30" width="150" height="74" rx="10" class="box-strong"/>
+        <text x="805" y="62" text-anchor="middle" font-weight="700">Bench runs</text><text x="805" y="84" text-anchor="middle" class="muted" font-size="12.5">any level</text>
+        <rect x="910" y="30" width="150" height="74" rx="10" class="box-strong"/>
+        <text x="985" y="62" text-anchor="middle" font-weight="700">Test the test</text><text x="985" y="84" text-anchor="middle" class="muted" font-size="12.5">rerun on healthy ref</text>
       </g>
       <g class="line" marker-end="url(#ar2)">
-        <path d="M130 67 H158"/><path d="M310 67 H338"/><path d="M500 67 H528"/><path d="M680 67 H708"/><path d="M850 67 H878"/>
+        <path d="M130 67 H158"/><path d="M310 67 H338"/><path d="M520 67 H548"/><path d="M700 67 H728"/><path d="M880 67 H908"/>
       </g>
-      <path d="M970 104 V140" class="line" marker-end="url(#ar2)"/>
+      <!-- verdict branch: trunk straight into SUSPECT, bus with a junction feeds DEFECT and PASS -->
+      <g class="line" marker-end="url(#ar2)">
+        <path d="M985 104 V148"/>
+        <path d="M985 126 H625 V148"/>
+        <path d="M805 126 V148"/>
+      </g>
+      <circle cx="985" cy="126" r="3.5" class="arrow"/>
+      <circle cx="805" cy="126" r="3.5" class="arrow"/>
       <g font-size="14">
-        <rect x="560" y="146" width="150" height="64" rx="10" class="ok"/>
-        <text x="635" y="174" text-anchor="middle" font-weight="700">PASS</text><text x="635" y="195" text-anchor="middle" class="muted" font-size="12.5">evidence kept</text>
-        <rect x="735" y="146" width="150" height="64" rx="10" class="suspect"/>
-        <text x="810" y="174" text-anchor="middle" font-weight="700">SUSPECT</text><text x="810" y="195" text-anchor="middle" class="muted" font-size="12.5">test was wrong</text>
-        <rect x="910" y="146" width="150" height="64" rx="10" class="defect"/>
-        <text x="985" y="174" text-anchor="middle" font-weight="700">DEFECT</text><text x="985" y="195" text-anchor="middle" class="muted" font-size="12.5">GitHub Issue</text>
+        <rect x="550" y="150" width="150" height="64" rx="10" class="ok"/>
+        <text x="625" y="178" text-anchor="middle" font-weight="700">PASS</text><text x="625" y="199" text-anchor="middle" class="muted" font-size="12.5">evidence kept</text>
+        <rect x="730" y="150" width="150" height="64" rx="10" class="defect"/>
+        <text x="805" y="178" text-anchor="middle" font-weight="700">DEFECT</text><text x="805" y="199" text-anchor="middle" class="muted" font-size="12.5">GitHub Issue</text>
+        <rect x="910" y="150" width="150" height="64" rx="10" class="suspect"/>
+        <text x="985" y="178" text-anchor="middle" font-weight="700">SUSPECT</text><text x="985" y="199" text-anchor="middle" class="muted" font-size="12.5">test was wrong</text>
       </g>
-      <path d="M970 140 H635 V144" class="line" marker-end="url(#ar2)"/>
-      <path d="M810 140 V144" class="line" marker-end="url(#ar2)"/>
-      <path d="M985 140 V144" class="line" marker-end="url(#ar2)"/>
-      <path d="M810 210 V250 H235 V106" class="line" stroke-dasharray="5 5" marker-end="url(#ar2)"/>
-      <text x="520" y="272" text-anchor="middle" class="muted" font-size="13">bounded auto-redraft: the rejection carries the bench's own evidence, facts only</text>
-      <path d="M985 210 V250 H1040" class="line" stroke-dasharray="2 4"/>
-      <text x="1040" y="244" text-anchor="end" class="muted" font-size="12">next campaign's error-guessing cases</text>
+      <!-- feedback loops, nested so they never cross: inner = defect history, outer = redraft -->
+      <path d="M805 214 V252 H430 V106" class="loop loop-p" marker-end="url(#ar2p)"/>
+      <text x="617" y="243" text-anchor="middle" class="muted" font-size="12.5">defect history → next campaign's error-guessing (EG) cases</text>
+      <path d="M985 214 V292 H235 V106" class="loop loop-t" marker-end="url(#ar2t)"/>
+      <text x="610" y="316" text-anchor="middle" class="muted" font-size="12.5">bounded auto-redraft: the rejection carries the bench's own evidence, facts only</text>
     </svg>
     </div>
   </figure>
