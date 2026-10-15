@@ -289,7 +289,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 1rem; flex-wr
 <div class="topbar"><div class="wrap">
   <span class="brand">Ketan Bakshi</span>
   <nav aria-label="On this page">
-    <a href="#problem">Problem</a><a href="#day">Lead's day</a><a href="#triage">Triage</a><a href="#levels">Levels</a><a href="#release">Release</a><a href="#limits">Limits</a><a href="#hunts">Root causes</a>
+    <a href="#status">Status</a><a href="#problem">Problem</a><a href="#day">Lead's day</a><a href="#triage">Triage</a><a href="#levels">Levels</a><a href="#release">Release</a><a href="#limits">Limits</a><a href="#hunts">Root causes</a>
   </nav>
 </div></div>
 
@@ -339,11 +339,27 @@ footer .wrap { display: flex; justify-content: space-between; gap: 1rem; flex-wr
     <li><strong>14/14</strong><span>seeded bugs caught by the suite</span></li>
     <li><strong>56/56</strong><span>exact back-to-back match, checked on every push</span></li>
     <li><strong>12/12</strong><span>OTA release checks on the real board</span></li>
+    <li><strong>349</strong><span>automated tests</span></li>
     <li><strong>0/22</strong><span>TLS handshakes stall the control loop after the root-cause fix (was 18/19)</span></li>
   </ul>
 </div>
 
 <main class="wrap">
+
+<section class="block" id="status">
+  <div class="sec-head">
+    <span class="sec-num">00 /</span>
+    <h2 class="sec">Where the project stands now</h2>
+    <p>Version 2.39, 14 October 2026. Work is still going on; this is what is done, what is proven and what is not.</p>
+  </div>
+  <div class="needs">
+    <article class="ncard"><small>Done</small><h3>Plant model verified in CI</h3><p>The vehicle model is restated in OpenModelica and graded on a maturity ladder on every push. It reached level 2 (checked against the bench's own plant): 36/36 hand-calculation checks, 9/9 deliberately broken variants caught, 15/15 back-to-back checks. Level 3 needs measured data, which does not exist yet.</p></article>
+    <article class="ncard"><small>Done</small><h3>The model found a bench bug</h3><p>The back-to-back check showed the bench's own reference plant delayed the brake by 79 ms instead of 80. Fixed, with the matrix unchanged at 55/56 plus one known finding. Two model faults were found the same way, and each now has a guard.</p></article>
+    <article class="ncard"><small>Done</small><h3>Persistence requirements</h3><p>"Stop if it persists for 50 ms" now has test cases at the boundary. On the controller, a 61 ms breach stops and a 60 ms one does not; the same holds on the two boards. A slow-debounce bug is caught by three cases.</p></article>
+    <article class="ncard"><small>Built, not run</small><h3>A physical witness: the vehicle link</h3><p>A UDP link contract, a chassis state machine and a simulated chassis are built and tested (27 hand-written cases, a dead-man stop at exactly 201 ms on the virtual clock). No chassis has been driven yet; only the simulated one.</p></article>
+    <article class="ncard next"><small>Prepared, not run</small><h3>Hardware still to come</h3><p>A relay power cut of the controller board, CAN FD and a second bus sniffer are planned. Run results will be added when they exist.</p></article>
+  </div>
+</section>
 
 <section class="block" id="problem">
   <div class="sec-head">
@@ -476,10 +492,10 @@ footer .wrap { display: flex; justify-content: space-between; gap: 1rem; flex-wr
 
   <div class="needs">
     <article class="ncard"><small>Gate</small><h3>Pre-merge quality gate</h3><p>Every push runs the controller as a separate process over CAN, in lockstep, and fails unless its timeline matches the Python reference exactly on all 56 scenarios. Seven CI jobs, Python 3.10 and 3.12.</p><a href="https://github.com/ketan01bakshi-dev/safe-stop-bench/actions" rel="noopener">Public CI on GitHub</a></article>
-    <article class="ncard"><small>Plant model</small><h3>Vehicle model checked in CI</h3><p>An OpenModelica vehicle plant is built and tested on every push: 9/9 deliberately broken model variants are caught, and the stop verdicts match the FMU plant on all 56 scenarios (stop distance within 0.03 m). Reached level 2 on a 0 to 4 maturity ladder; in progress.</p></article>
+    <article class="ncard"><small>Plant model</small><h3>Vehicle model checked in CI</h3><p>An OpenModelica vehicle plant is built and graded on every push: 9/9 deliberately broken model variants are caught, and its stop verdicts match the bench on all 56 scenarios (stop distance within 0.03 m). Level 2 on a 0 to 4 maturity ladder.</p></article>
     <article class="ncard"><small>Classify</small><h3>Isolate the failing layer</h3><p>Every non-PASS is labelled PRODUCT, TEST, BENCH or GAP. A failure on a wrong or silent board, or one that needed a rerun, becomes <i>suspect bench</i> and is never drafted as a defect.</p><a href="#triage">Four reasons a test goes red</a></article>
     <article class="ncard"><small>Root cause</small><h3>Signal-level analysis</h3><p>Per-cycle traces with MDF4 export, board-side tick-hook timing, and passive bus audits that check every counter and CRC. Two hardware root causes were found this way.</p><a href="#hunts">Two hunts on real hardware</a></article>
-    <article class="ncard"><small>Tooling</small><h3>Python for logs, triage, reports</h3><p>Scenario runner, back-to-back comparer, HTML report, overflow audit, stall watcher, preflight with an error catalogue, failure-cluster dashboard and release verdict. 150+ automated tests.</p></article>
+    <article class="ncard"><small>Tooling</small><h3>Python for logs, triage, reports</h3><p>Scenario runner, back-to-back comparer, HTML report, overflow audit, stall watcher, preflight with an error catalogue, failure-cluster dashboard and release verdict. 349 automated tests.</p></article>
     <article class="ncard"><small>Agentic AI</small><h3>Catches its own mistakes</h3><p>A model's first draft modelled a fault as a single counter jump. The bench rejected it with evidence; the redraft (30 ms out-of-order delivery) passed 7/7, and nothing false was filed.</p></article>
     <article class="ncard"><small>Audit</small><h3>Every approval is traceable</h3><p>Each approval is bound to the SHA-256 of the exact artifact approved. In a test mode the agent can approve for the lead; that is recorded as the agent's approval and never reused by a human-gated run.</p></article>
     <article class="ncard next"><small>Next, not built</small><h3>Automated regression isolation</h3><p>Every version is tagged, and the exact back-to-back check is already a deterministic pass/fail oracle, which is what <code>git bisect run</code> needs to pin a regression to one change. That script is the next step; it isn't in the repo yet.</p></article>
@@ -599,7 +615,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 1rem; flex-wr
     <li><b>Synthetic data, illustrative limits.</b> No real vehicle values, no employer code or data. It's a method demonstrator, not a safety product.</li>
     <li><b>A safety layer, not a planner.</b> It tests the controller around an AV planner, not perception, prediction or planning.</li>
     <li><b>AI-assisted.</b> I set the problem, the requirements and the acceptance criteria and judged every result; Claude Code wrote most of the code. I can walk through every module.</li>
-    <li><b>Two development boards.</b> Classic CAN at 500 kbit/s with lab wiring. CAN FD and a physical supply cut are prepared, not yet run.</li>
+    <li><b>Two development boards.</b> Classic CAN at 500 kbit/s with lab wiring. CAN FD and a physical supply cut are prepared, not yet run. The vehicle-link work is tested against a simulated chassis only.</li>
   </ul>
 </section>
 
