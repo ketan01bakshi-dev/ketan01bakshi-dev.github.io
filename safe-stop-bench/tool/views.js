@@ -11,8 +11,36 @@
     const k = req.id + ":" + what;
     if (busy.has(k)) return;
     busy.add(k); PL.route();
+    if (E.BY_KEY[what]) markStart(req, what);
     try { await fn(); } catch (e) { PL.toast(e.message); } finally { busy.delete(k); PL.saveRequests(); PL.route(); }
   }
+
+  // ------------------------------------------------------------------ timing: measured in this browser, shared only on a click
+  /* Per stage: when work started, hands-on seconds (tab visible and a key/mouse/touch event in the last 2 minutes), AI seconds,
+     and the person's own estimate of the same work by hand. Nothing leaves the browser unless the person copies or emails it. */
+  const IDLE_MS = 120000, TICK_S = 5;
+  function timing(req, key) {
+    req.timing = req.timing || {};
+    return req.timing[key] = req.timing[key] || { started: null, active_s: 0, ai_s: 0, estimate_h: null };
+  }
+  function markStart(req, key) { const t = timing(req, key); if (!t.started) t.started = PL.nowIso(); }
+  let lastInput = Date.now(), track = null, unsaved = 0;
+  ["keydown", "mousedown", "pointermove", "wheel", "touchstart", "scroll"].forEach(ev => window.addEventListener(ev, () => { lastInput = Date.now(); }, { passive: true, capture: true }));
+  setInterval(() => {
+    if (!track || document.visibilityState !== "visible" || Date.now() - lastInput > IDLE_MS) return;
+    const r = PL.findReq(track.id);
+    if (!r) return;
+    timing(r, track.key).active_s += TICK_S;
+    if (++unsaved >= 6) { unsaved = 0; PL.saveRequests(); }
+  }, TICK_S * 1000);
+  window.addEventListener("pagehide", () => { if (unsaved) PL.saveRequests(); });
+  const aiSecondsOf = (req, key) => {
+    if (key === "requirements") return timing(req, key).ai_s || 0;
+    const m = { plan: () => req.plan && req.plan.meta, architecture: () => req.architecture && req.architecture.meta, guides: () => req.guides && req.guides.index.meta, firmware: () => req.firmware && req.firmware.meta,
+      electrical: () => ({ llm: req.elecInputsUsage }) }[key]();
+    return (m && m.llm && m.llm.seconds) || 0;
+  };
+  const dur = s => s == null ? "–" : s < 90 ? Math.round(s) + " s" : s < 5400 ? Math.round(s / 60) + " min" : PL.fmt(s / 3600, 1) + " h";
   const btn = (label, fn, cls, extra) => h("button", Object.assign({ class: "btn " + (cls || ""), type: "button", text: label, onclick: fn }, extra || {}));
   const small = (label, fn, extra) => h("button", Object.assign({ class: "btn-small", type: "button", text: label, onclick: fn }, extra || {}));
   const muted = t => h("p", { class: "muted small", text: t });
@@ -120,11 +148,13 @@
     return h("nav", { class: "strip", "aria-label": "Pipeline stages" }, items);
   }
   async function frame(req, cur, body) {
-    const st = cur === "inventory" ? null : E.BY_KEY[cur];
+    const st = E.BY_KEY[cur];
+    const other = { inventory: ["Project inventory", "What your project already has. Stage 2 compares the approved requirements with this; stages 3 and 4 use the boards and the CAN registry."],
+      timing: ["Timing", "How long each stage took you, measured in this browser, next to your own estimate of the same work by hand. Nothing is sent unless you choose to share it."] }[cur];
     PL.mount(
-      h("p", { class: "small crumbs" }, h("a", { href: "#/", text: "← All requests" }), req.sample ? h("span", { class: "badge b-in-review", text: "read-only sample: the real OTA pilot" }) : null),
-      h("h1", { text: (st ? st.name : "Project inventory") + ": " + req.title }),
-      st ? h("p", { class: "muted lede-s", text: st.desc }) : h("p", { class: "muted lede-s", text: "What your project already has. Stage 2 compares the approved requirements with this; stages 3 and 4 use the boards and the CAN registry." }),
+      h("p", { class: "small crumbs" }, h("a", { href: "#/", text: "← All requests" }), req.sample ? h("span", { class: "badge b-in-review", text: "read-only sample: the real OTA pilot" }) : h("a", { href: base(req) + "/timing", text: "⏱ Timing" })),
+      h("h1", { text: (st ? st.name : other[0]) + ": " + req.title }),
+      h("p", { class: "muted lede-s", text: st ? st.desc : other[1] }),
       await strip(req, cur),
       body);
   }
@@ -202,6 +232,7 @@
           h("a", { class: "cta card", href: "#/sample" }, h("strong", { text: "Explore the real pilot" }), h("span", { text: "All six stages of the OTA pilot run on the Safe-Stop Bench: 20 needs, 34 gaps, 4 new CAN ids, 11 electrical findings, 4 guides. Read-only." })),
           h("a", { class: "cta card", href: "#/new" }, h("strong", { text: "Start your own feature" }), h("span", { text: "Describe it, agree the scope, then run every stage on your project. Works without AI." })),
           h("button", { class: "cta card", type: "button", onclick: loadExample }, h("strong", { text: "Try it on the OTA example" }), h("span", { text: "A partly filled copy you can edit and push through all six stages yourself." })))),
+      h("p", { class: "invite" }, h("strong", { text: "Be the first measured team. " }), "Each request has a ⏱ Timing page that measures your hands-on time per stage in this browser. Add your own estimate of the same work by hand, and share the result if you like. The first one sent goes on the Proofline page."),
       h("div", { class: "row" }, btn("Import a request (.json)", () => file.click()), file, btn(PL.aiReady() ? "AI: " + PL.aiLabel() : "Add your AI key (optional)", PL.openSettings)),
       h("h2", { text: "Your requests (saved in this browser)" }),
       PL.requests.length ? list : h("p", { class: "empty", text: "None yet." }));
@@ -344,6 +375,7 @@
           req.scope = applied.scope; outcomes = applied.outcomes; req.additions = (req.additions || []).concat(applied.pending);
           [reply, source] = S.chooseReply(req.scope, r.proposals);
         } else [reply, source] = [S.ruleQuestion(req.scope), "rules"];
+        timing(req, "requirements").ai_s += (r.usage && r.usage.seconds) || 0;
         req.chat.push({ role: "assistant", text: reply, at: PL.nowIso(), meta: [PL.usageLine(r.usage), outcomes.length ? "applied: " + outcomes.join("; ") : "nothing applied",
           r.rejected.length ? r.rejected.length + " proposal(s) dropped by the rules (" + r.rejected.map(x => (x.key || "?") + ": " + x.reason).slice(0, 4).join("; ") + ")" : null,
           source === "rules" ? "reply written by the rules" : null].concat(r.notes).filter(Boolean).join(" · ") });
@@ -523,6 +555,7 @@ Allowed status per axis: ${JSON.stringify(E.CAP_STATUSES)}. No prose outside the
       inputsPanel = PL.section("Inputs: signals to wire and supply rails",
         muted("The AI can list them from the architecture; you correct them; then code allocates pins and does every calculation. Loads as 'name:mA; name:?' (? = unknown, never guessed)."),
         h("div", { class: "row" }, btn(isBusy(req.id, "elec-in") ? "Working…" : "List them from the architecture with AI", () => work(req, "elec-in", async () => {
+          markStart(req, "electrical");
           const r = await E.draftElectricalInputs(req, true); req.elecInputs = r.inputs; req.elecInputsUsage = r.usage; PL.audit(req, "electrical inputs drafted");
         }), "", { disabled: !PL.aiReady() || !!needs || isBusy(req.id, "elec-in") })),
         h("h3", { text: "Signals" }), editTable([{ key: "board", label: "Board", options: (req.inventory.boards || []).map(b => b.id) }, { key: "function", label: "Function" }, { key: "kind", label: "Kind", options: ["adc", "digital_in", "digital_out", "pwm"] },
@@ -530,6 +563,7 @@ Allowed status per axis: ${JSON.stringify(E.CAP_STATUSES)}. No prose outside the
         h("h3", { text: "Supply rails" }), editTable([{ key: "name", label: "Rail" }, { key: "source", label: "Source" }, { key: "rating_ma", label: "Rating mA", num: true }, { key: "loads_text", label: "Loads (name:mA; name:?)" }], railRows, save),
         h("div", { class: "row mt" }, btn("Run the electrical checks", async () => {
           inp.rails.forEach(r => { r.loads = String(r.loads_text || "").split(";").map(x => x.trim()).filter(Boolean).map(x => { const [n, v] = x.split(":"); return { name: (n || "").trim(), current_ma: v == null || v.trim() === "?" || v.trim() === "" ? null : Number(v) }; }); });
+          markStart(req, "electrical");
           req.electrical = await E.computeElectrical(req, PL.clone(inp), { llm: req.elecInputsUsage || { calls: 0 }, notes: [] });
           PL.audit(req, "electrical checks run"); PL.saveRequests(); PL.route();
         }, "btn-primary", { disabled: !!needs }), h("span", { class: "muted small", text: needs || "Board facts (free pins, ADC pins, limits) come from the project inventory." })));
@@ -675,12 +709,76 @@ Allowed status per axis: ${JSON.stringify(E.CAP_STATUSES)}. No prose outside the
       muted("First gate opened " + first.at.replace("T", " ").replace("Z", "") + " UTC; last approval " + last.at.replace("T", " ").replace("Z", "") + " UTC. The costs are what the same calls would cost on the API; the pilot ran on the owner's Claude plan."))];
   }
 
+  // ------------------------------------------------------------------ timing page
+  async function viewTiming(req) {
+    const rows = [];
+    let totActive = 0, totAi = 0, totEst = 0, estCount = 0, approvedCount = 0;
+    for (const s of E.STAGES) {
+      const t = timing(req, s.key), stt = await E.stageState(req, s.key), g = req.gates[s.gate];
+      const started = s.key === "requirements" ? (t.started || ((req.audit || [])[0] || {}).at || null) : t.started;
+      const done = stt.key === "approved" && g ? g.at : null;
+      const cal = started ? ((done ? Date.parse(done) : Date.now()) - Date.parse(started)) / 1000 : null;
+      const ai = aiSecondsOf(req, s.key);
+      totActive += t.active_s || 0; totAi += ai;
+      if (t.estimate_h != null && t.estimate_h !== "") { totEst += Number(t.estimate_h); estCount++; }
+      if (done) approvedCount++;
+      rows.push({ s, t, started, done, cal, ai });
+    }
+    const est = key => {
+      const t = timing(req, key);
+      return h("input", { type: "number", min: "0", step: "0.5", value: t.estimate_h == null ? "" : t.estimate_h, placeholder: "hours", "aria-label": "Your estimate by hand for " + E.BY_KEY[key].name, class: "est",
+        onchange: e => { t.estimate_h = e.target.value === "" ? null : Number(e.target.value); PL.saveRequests(); PL.route(); } });
+    };
+    const table = PL.table([
+      { label: "Stage", render: r => h("a", { href: base(req) + (r.s.path ? "/" + r.s.path : ""), text: r.s.n + " · " + r.s.name }) },
+      { label: "Hands-on", render: r => dur(r.t.active_s || 0) }, { label: "AI", render: r => dur(r.ai) },
+      { label: "Calendar", render: r => r.cal == null ? "not started" : dur(r.cal) + (r.done ? "" : " (still open)") },
+      { label: "Your estimate by hand", render: r => est(r.s.key) }], rows);
+    const sh = req.timingShare = req.timingShare || { role: "", note: "", title: false };
+    const role = h("input", { placeholder: "optional: your role or team size", maxlength: 120, value: sh.role }), note = h("textarea", { placeholder: "optional: anything worth knowing (what was faster, what was in the way)", maxlength: 1500, value: sh.note });
+    const withTitle = h("input", { type: "checkbox", checked: sh.title });
+    role.addEventListener("input", () => { sh.role = role.value; PL.saveRequests(); });
+    note.addEventListener("input", () => { sh.note = note.value; PL.saveRequests(); });
+    withTitle.addEventListener("change", () => { sh.title = withTitle.checked; PL.saveRequests(); });
+    const report = () => {
+      const lines = ["Proofline timing (browser edition)", ""];
+      if (withTitle.checked) lines.push("Feature: " + req.title, "");
+      rows.forEach(r => lines.push(r.s.n + ". " + r.s.name + ": hands-on " + dur(r.t.active_s || 0) + ", AI " + dur(r.ai) + ", calendar " + (r.cal == null ? "not started" : dur(r.cal) + (r.done ? "" : " (open)")) + ", my estimate by hand " + (r.t.estimate_h == null ? "-" : r.t.estimate_h + " h")));
+      lines.push("", "Total hands-on: " + dur(totActive) + " · AI: " + dur(totAi) + " · my estimate by hand: " + (estCount ? totEst + " h (" + estCount + " stage(s))" : "-") + " · stages approved: " + approvedCount + "/6");
+      lines.push("AI: " + (PL.aiReady() ? PL.settings.model : "off"));
+      if (role.value.trim()) lines.push("Role / team: " + role.value.trim());
+      if (note.value.trim()) lines.push("", "Note: " + note.value.trim());
+      return lines.join("\n");
+    };
+    // the ratio counts only stages that are approved (finished) and estimated, so a half-done stage cannot inflate it
+    const fin = rows.filter(r => r.done && r.t.estimate_h != null && r.t.estimate_h !== "" && (r.t.active_s || 0) >= 60);
+    const ratio = fin.length ? fin.reduce((a, r) => a + Number(r.t.estimate_h) * 3600, 0) / fin.reduce((a, r) => a + r.t.active_s, 0) : null;
+    await frame(req, "timing", [
+      h("ul", { class: "stats-row" },
+        h("li", {}, h("strong", { text: dur(totActive) }), h("span", { text: "hands-on, all stages" })),
+        h("li", {}, h("strong", { text: dur(totAi) }), h("span", { text: "AI time" })),
+        h("li", {}, h("strong", { text: approvedCount + "/6" }), h("span", { text: "stages approved" })),
+        h("li", {}, h("strong", { text: estCount ? totEst + " h" : "–" }), h("span", { text: "your estimate by hand" })),
+        h("li", {}, h("strong", { text: ratio ? PL.fmt(ratio, 1) + "×" : "–" }), h("span", { text: "your estimate ÷ hands-on, approved stages only" }))),
+      PL.section("Per stage", table,
+        muted("Hands-on counts only while this tab is visible and you typed, clicked or scrolled in the last 2 minutes. Calendar runs from the first work on a stage to its approval. AI is the model time of the latest run.")),
+      PL.section("Share your result (optional)",
+        h("p", { text: "Proofline's page has no measured before-and-after yet. If you send yours, it can become the first one (only with your permission, and without naming you unless you say so)." }),
+        role, note, h("label", { class: "inline" }, withTitle, "Include the feature title"),
+        h("div", { class: "row mt" },
+          btn("Copy as text", async () => { try { await navigator.clipboard.writeText(report()); PL.toast("Copied."); } catch (e) { PL.toast("Copy failed: select the preview below and copy it."); } }),
+          btn("Email it to Ketan", () => { location.href = "mailto:ketan01bakshi@gmail.com?subject=" + encodeURIComponent("Proofline timing") + "&body=" + encodeURIComponent(report()); }, "btn-primary")),
+        muted("The email opens in your own mail app with the text below; nothing is sent until you press send there."),
+        h("details", {}, h("summary", { text: "Preview what would be shared" }), h("pre", { class: "share-pre", text: report() })))]);
+  }
+
   // ------------------------------------------------------------------ router
-  const VIEWS = { "": viewRequirements, plan: viewPlan, architecture: viewArchitecture, electrical: viewElectrical, guides: viewGuides, firmware: viewFirmware, inventory: viewInventory };
+  const VIEWS = { "": viewRequirements, plan: viewPlan, architecture: viewArchitecture, electrical: viewElectrical, guides: viewGuides, firmware: viewFirmware, inventory: viewInventory, timing: viewTiming };
   let routing = Promise.resolve();
   PL.route = function () {
     routing = routing.then(async () => {
       const m = (location.hash || "#/").slice(1).split("/").filter(Boolean).map(decodeURIComponent);
+      track = m[0] === "r" && m[1] && E.BY_KEY[m[2] === undefined ? "requirements" : m[2]] ? { id: m[1], key: m[2] === undefined ? "requirements" : m[2] } : null;
       if (m[0] === "new") return viewNew();
       if (m[0] === "help") return viewHelp();
       if (m[0] === "sample") {

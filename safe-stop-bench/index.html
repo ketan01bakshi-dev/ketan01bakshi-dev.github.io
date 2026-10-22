@@ -9,10 +9,12 @@
 <meta property="og:description" content="Six gated stages for embedded and vehicle features. A real pilot: 34 gaps found, 4 CAN ids checked, 11 electrical findings, 2.8 minutes of AI time, $0.63. Free in your browser, bring your own AI key.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://ketan01bakshi-dev.github.io/safe-stop-bench/">
-<meta property="og:image" content="https://ketan01bakshi-dev.github.io/safe-stop-bench/bench-hil.jpg">
-<meta property="og:image:width" content="1230">
-<meta property="og:image:height" content="782">
+<meta property="og:image" content="https://ketan01bakshi-dev.github.io/safe-stop-bench/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Proofline: from feature idea to a tested board, six stages each approved by a person.">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://ketan01bakshi-dev.github.io/safe-stop-bench/og-card.png">
 <link rel="icon" href="../favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -360,6 +362,18 @@ details.deep section.block { padding-top: 2.6rem; }
 .ctaband h2 { margin: 0 0 .3rem; font-size: clamp(1.4rem, 3vw, 1.9rem); }
 .ctaband p { margin: 0; color: #c9d6e8; }
 .ctaband .btns { margin: 0; }
+.tour { display: grid; grid-template-columns: 1.5fr 1fr; gap: 1.4rem; align-items: center; margin: 0 0 1.6rem; }
+@media (max-width: 900px) { .tour { grid-template-columns: 1fr; } }
+.tour video { width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line); background: #0a1628; box-shadow: var(--shadow); display: block; }
+.tour h3 { margin: 0 0 .4rem; font-size: 1.25rem; }
+.tour p { margin: 0 0 .6rem; color: var(--muted); }
+.invite { margin-top: 1.2rem; background: var(--tint-gap); border: 1px solid var(--line); border-left: 4px solid var(--gap); border-radius: 12px; padding: 1.1rem 1.3rem; display: grid; grid-template-columns: 1fr auto; gap: .6rem 1.4rem; align-items: center; }
+@media (max-width: 760px) { .invite { grid-template-columns: 1fr; } }
+.invite h3 { margin: 0 0 .3rem; font-size: 1.15rem; }
+.invite p { margin: 0; color: var(--muted); }
+.invite ol { margin: .5rem 0 0; padding-left: 1.2rem; color: var(--muted); }
+.invite li { margin: .2rem 0; }
+.invite .btn-primary { background: var(--navy); color: var(--card); }
 .topbar .try-btn { background: #e6edf7; color: #0a1628 !important; border-radius: 999px; padding: .2rem .8rem; font-weight: 700; }
 </style>
 </head>
@@ -469,6 +483,17 @@ details.deep section.block { padding-top: 2.6rem; }
     <h2 class="sec">How it works: six stages, six sign-offs</h2>
     <p>Each stage reads only approved work from the stages before it. Under each one is what it produced on the real pilot.</p>
   </div>
+  <div class="tour">
+    <video controls preload="none" playsinline poster="proofline-tour.jpg" aria-label="One-minute walkthrough of the real Proofline pilot, all six stages">
+      <source src="proofline-tour.mp4" type="video/mp4">
+      Your browser can't play this video. <a href="proofline-tour.mp4">Download it (MP4, 4 MB)</a>.
+    </video>
+    <div>
+      <h3>Watch the real pilot in 60 seconds</h3>
+      <p>Every screen is the live tool showing the pilot's own results: 34 gaps, 4 new CAN ids, 11 electrical findings, nine firmware modules at F3. No sound needed; captions explain each stage.</p>
+      <div class="btns"><a class="btn btn-primary" href="tool/#/sample">Open it yourself</a></div>
+    </div>
+  </div>
   <div class="stages6">
     <article><span class="n">Stage 1</span><h3>Feature Requirements</h3><p>A chat (or a form) fills a 13-item checklist. A quote must really be in your words; "TBD" blocks completion until you decide.</p><p class="pilot">Pilot: 13 items, 1 open decision carried forward.</p><a href="tool/#/sample">Open stage 1 →</a></article>
     <article><span class="n">Stage 2</span><h3>Gap Analysis &amp; Overall Plan</h3><p>Every need is checked against what your project already has, on six axes. Code decides covered, partial or missing; the parts list is proposed, never ordered.</p><p class="pilot">Pilot: 20 needs, 34 gaps, 25 work items.</p><a href="tool/#/sample/plan">Open stage 2 →</a></article>
@@ -499,7 +524,18 @@ details.deep section.block { padding-top: 2.6rem; }
       </ul>
     </article>
   </div>
-  <p class="note">We have not timed the same work done by hand yet, so there is no "hours saved" figure here. If you run a feature through Proofline and time it against your usual way, <a href="mailto:ketan01bakshi@gmail.com?subject=Proofline%20timing">tell me</a> and your measured result goes on this page.</p>
+  <div class="invite">
+    <div>
+      <h3>Be the first measured team</h3>
+      <p>No one has timed Proofline against doing the same work by hand yet, so this page shows no "hours saved" figure. Your result can be the first.</p>
+      <ol>
+        <li>Run a real feature through Proofline. Each request has a ⏱ Timing page that counts your hands-on time per stage, in your browser only.</li>
+        <li>Type your own estimate of the same work done your usual way.</li>
+        <li>Press "Email it to Ketan". You see exactly what is shared, and your feature title stays out unless you tick it.</li>
+      </ol>
+    </div>
+    <a class="btn btn-primary" href="tool/#/new">Start a timed feature</a>
+  </div>
 </section>
 
 <section class="block" id="money">
@@ -917,6 +953,7 @@ details.deep section.block { padding-top: 2.6rem; }
     <details><summary>Is my API key safe?</summary><p>It goes from your browser straight to the provider you pick, and by default it is forgotten when the tab closes. Use a key you can revoke, set a spending limit, and don't save it on a shared computer.</p></details>
     <details><summary>Can my team work on the same feature?</summary><p>Not at the same time yet. One person works in one browser and exports the request; a colleague imports it. Shared workspaces are on the list.</p></details>
     <details><summary>Does it claim ISO 26262 or any other compliance?</summary><p>No. Standards are used as a reference only. Proofline helps you build the evidence; it does not certify anything.</p></details>
+    <details><summary>Does it track me?</summary><p>No. The ⏱ Timing page counts your own hands-on time, in your browser only, so you can compare it with doing the work by hand. It is shared only if you press "Email it to Ketan" and then send the email yourself.</p></details>
     <details><summary>Will it order parts or flash my boards?</summary><p>Never. It proposes parts and writes guides. You buy, wire, flash and measure, and record what you found.</p></details>
   </div>
 </section>

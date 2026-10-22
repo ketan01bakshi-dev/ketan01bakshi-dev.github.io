@@ -248,3 +248,8 @@ details.comp summary { cursor: pointer; }
 .inline-field input { width: 9rem; }
 .b-assumed_open { color: var(--info); background: var(--info-tint); }
 .b-drafting, .b-missing { color: var(--faint); }
+/* timing */
+input.est { width: 6.5rem; }
+.share-pre { white-space: pre-wrap; background: var(--code-bg); padding: .6rem; border-radius: 6px; font-size: .82rem; overflow-wrap: anywhere; }
+.invite { background: var(--ok-tint); border: 1px solid var(--line); border-left: 4px solid var(--ok); border-radius: 10px; padding: .6rem .9rem; font-size: .95rem; }
+.crumbs a + a, .crumbs a + span { margin-left: auto; }
