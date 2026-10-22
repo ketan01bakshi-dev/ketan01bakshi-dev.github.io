@@ -165,6 +165,13 @@ h3 { line-height: 1.25; }
 .ncard p { margin: 0; color: var(--muted); font-size: .98rem; flex: 1; }
 .ncard a { margin-top: .7rem; font-size: .92rem; }
 .ncard.next { grid-column: 1 / -1; background: transparent; border-style: dashed; }
+.try { display: flex; gap: 1rem 2rem; align-items: center; justify-content: space-between; flex-wrap: wrap; background: var(--tint-gap); border: 1px solid var(--line); border-left: 4px solid var(--gap); border-radius: 12px; padding: 1.1rem 1.3rem; }
+.try > div { flex: 1 1 32rem; }
+.try small { font-family: var(--mono); font-size: .72rem; letter-spacing: .07em; text-transform: uppercase; color: var(--gap); font-weight: 600; }
+.try h3 { margin: .2rem 0 .4rem; font-size: 1.2rem; }
+.try p { margin: 0; color: var(--muted); }
+.try .btn-primary { background: var(--navy); color: var(--card); }
+.try .btn-primary:hover { background: var(--navy-ink); color: var(--card); }
 .ncard.next small { color: var(--bench); }
 
 /* 03 taxonomy */
@@ -289,7 +296,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 1rem; flex-wr
 <div class="topbar"><div class="wrap">
   <span class="brand">Ketan Bakshi</span>
   <nav aria-label="On this page">
-    <a href="#status">Status</a><a href="#problem">Problem</a><a href="#day">Lead's day</a><a href="#triage">Triage</a><a href="#levels">Levels</a><a href="#release">Release</a><a href="#limits">Limits</a><a href="#hunts">Root causes</a>
+    <a href="tool/">Try the tool</a><a href="#status">Status</a><a href="#problem">Problem</a><a href="#day">Lead's day</a><a href="#triage">Triage</a><a href="#levels">Levels</a><a href="#release">Release</a><a href="#limits">Limits</a><a href="#hunts">Root causes</a>
   </nav>
 </div></div>
 
@@ -300,7 +307,8 @@ footer .wrap { display: flex; justify-content: space-between; gap: 1rem; flex-wr
       <h1>Not every <span class="red">red</span> test is a bug.</h1>
       <p class="lede">I built a test bench that tells them apart. The same 56 fault scenarios run from Python SiL to two ESP32 boards on a real CAN bus, and every failure is sorted into <b>product defect</b>, <b>test error</b>, <b>bench fault</b> or <b>coverage gap</b> before anyone files a ticket.</p>
       <div class="btns">
-        <a class="btn btn-primary" href="https://github.com/ketan01bakshi-dev/safe-stop-bench" rel="noopener">View the code on GitHub</a>
+        <a class="btn btn-primary" href="tool/">Try the scope tool</a>
+        <a class="btn btn-ghost" href="https://github.com/ketan01bakshi-dev/safe-stop-bench" rel="noopener">View the code on GitHub</a>
         <a class="btn btn-ghost" href="../assets/resume.docx" download="Ketan_Bakshi_Resume.docx">Résumé (Word)</a>
       </div>
       <ul class="chips" aria-label="About this project">
@@ -350,10 +358,21 @@ footer .wrap { display: flex; justify-content: space-between; gap: 1rem; flex-wr
   <div class="sec-head">
     <span class="sec-num">00 /</span>
     <h2 class="sec">Where the project stands now</h2>
-    <p>Public code: version 2.39. A private build is ahead of it, updated 16 October 2026. Work is still going on; this is what is done, what is proven and what is not.</p>
+    <p>Public code: version 2.39. A private build is ahead of it, updated 22 October 2026. Work is still going on; this is what is done, what is proven and what is not.</p>
+  </div>
+  <div class="try">
+    <div>
+      <small>New · free to use</small>
+      <h3>Try Proofline's first stage in your browser</h3>
+      <p>Describe a feature for your own embedded or vehicle project and agree a 13-item scope (FR-01 to FR-13) with the same rules the bench's tool uses. Your approval is bound to a SHA-256 of what you approved. It works without AI; for AI help, add <b>your own</b> Claude, OpenAI or local-model key. The page has no server, your key goes only to the provider you pick, and your data stays in your browser.</p>
+    </div>
+    <a class="btn btn-primary" href="tool/">Open the scope tool</a>
   </div>
   <div class="needs">
-    <article class="ncard"><small>In progress · private build</small><h3>From a bench to a product development tool</h3><p>The bench is becoming the test end of a tool that takes a feature request and agrees the scope in a local web app. It lists what the project already has, what is missing and what to buy, then drafts the architecture, a 12 V supply plant model, firmware modules and electrical checks. The first feature is an over-the-air update of the controller. A person approves every stage, and the tool never orders parts. The private build has over 1,300 automated tests.</p></article>
+    <article class="ncard"><small>In progress · private build</small><h3>Proofline: from a bench to a product development tool</h3><p>The bench is now the test end of a tool named Proofline. A feature request runs through six stages, each closed by a person's approval: Feature Requirements, Gap Analysis &amp; Overall Plan, Network &amp; Node Architecture, Electrical Design Checks, Integration Guides and Firmware Requirements. The first feature is an over-the-air update of the controller. The tool never orders parts. The private build passes 1,647 automated tests.</p></article>
+    <article class="ncard"><small>Done · 16–17 Oct</small><h3>Owner decisions recorded and applied</h3><p>The tool turned the OTA plan's open questions into five owner decisions, each bound to the hash of the approved scope, plan and architecture. Decided: programming traffic capped at 25 % of the bus, a per-board security secret never kept in source, two new CAN ids, and a supply floor of 3.7 V (abort at 3.0 V) on the controller's 5 V rail. The commit logic stays switched off until the release checks are re-run.</p></article>
+    <article class="ncard"><small>Finding · 22 Oct</small><h3>The electrical checks questioned a decided threshold</h3><p>The electrical stage flagged that the controller board may reset before its supply ever reaches the 3.0 V abort level (regulator dropout plus brown-out). A re-check partly confirmed it: the mechanism is real, the first estimate was too pessimistic, and the board's regulator is not recorded anywhere. The note lists the one bench measurement that settles it; nothing is assumed.</p></article>
+    <article class="ncard"><small>Done, draft · 22 Oct</small><h3>Firmware that reads the supply</h3><p>A switched-off-by-default firmware module reads the supply divider, flags an open or saturated input, and refuses an update when the CAN and ADC readings disagree. Built with the flag off, the controller image matches the committed baseline in flash and RAM. Tests were written blind by a separate agent run; 52 of 55 mutants killed, 3 triaged as equivalent.</p></article>
     <article class="ncard"><small>Done, drafts</small><h3>Supply model and firmware modules, checked by independent tests</h3><p>The 12 V supply and battery model catches 11/11 deliberately broken variants and matches an independent Python reference 7/7. The firmware drafts (ISO-TP, UDS download, signature check) were tested with tests written from the specifications by a separate agent run.</p></article>
     <article class="ncard"><small>Not done</small><h3>No new hardware touched yet</h3><p>None of the new firmware has been flashed, no circuit has been fitted or measured, and the signature check has not been timed on the board. Those steps wait for the owner and the parts.</p></article>
     <article class="ncard"><small>Done</small><h3>Plant model verified in CI</h3><p>The vehicle model is restated in OpenModelica and graded on a maturity ladder on every push. It reached level 2 (checked against the bench's own plant): 36/36 hand-calculation checks, 9/9 deliberately broken variants caught, 15/15 back-to-back checks. Level 3 needs measured data, which does not exist yet.</p></article>

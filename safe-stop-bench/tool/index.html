@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- No server, no third-party scripts. AI calls go from the visitor's browser straight to the provider they choose, with their own key. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https: http://localhost:* http://127.0.0.1:*; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Proofline Scope Tool</title>
+<meta name="description" content="Proofline, the feature-requirements stage of the Safe-Stop Bench, running in your browser. Turn a feature idea into a reviewed 13-item scope. Bring your own AI key, or use it without AI.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231e3a5f'/%3E%3Cpath d='M9 17l5 5 9-12' stroke='%23e6edf7' stroke-width='3.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="#/">Proofline <span>scope tool</span></a>
+    <nav>
+      <a href="../">Safe-Stop Bench</a>
+      <a href="#/help">How it works</a>
+      <button type="button" id="ai-chip" class="chip-btn" aria-haspopup="dialog">AI: off</button>
+      <button type="button" id="theme-btn" class="chip-btn" aria-label="Switch light or dark theme">Theme</button>
+    </nav>
+  </div>
+</header>
+
+<div class="notice">
+  <div class="wrap">
+    <strong>Your data stays in your browser.</strong>
+    This page has no server. Requests are saved in this browser only. AI is optional: add your own API key in
+    <button type="button" class="linklike" id="notice-settings">AI settings</button>; it is sent only to the provider you pick.
+  </div>
+</div>
+
+<main id="app" class="wrap" tabindex="-1"></main>
+
+<footer class="foot">
+  <div class="wrap">
+    Proofline by Ketan Bakshi · rules decide, the model drafts, the person approves ·
+    AI-assisted, synthetic, illustrative; makes no claim of compliance with any standard ·
+    <a href="../">back to the bench</a>
+  </div>
+</footer>
+
+<dialog id="settings" aria-labelledby="settings-title">
+  <form id="settings-form" method="dialog">
+    <h2 id="settings-title">AI settings</h2>
+    <p class="muted small">Optional. Without a key the tool still works: it asks from fixed templates and you fill the checklist by hand.</p>
+
+    <label>Your name <span class="muted">(recorded on accepts and approvals)</span>
+      <input id="s-name" autocomplete="name" maxlength="60">
+    </label>
+
+    <label>Provider
+      <select id="s-provider">
+        <option value="anthropic">Anthropic (Claude)</option>
+        <option value="openai">OpenAI</option>
+        <option value="compatible">OpenAI-compatible endpoint (OpenRouter, Ollama, LM Studio …)</option>
+        <option value="off">No AI</option>
+      </select>
+    </label>
+
+    <div id="s-ai-fields">
+      <label id="s-base-wrap">Endpoint base URL
+        <input id="s-base" placeholder="https://openrouter.ai/api/v1  or  http://localhost:11434/v1" autocomplete="off" spellcheck="false">
+      </label>
+      <label>API key
+        <span class="key-row">
+          <input id="s-key" type="password" autocomplete="off" spellcheck="false" placeholder="paste your own key">
+          <button type="button" id="s-show" class="btn-small">Show</button>
+        </span>
+      </label>
+      <label>Model
+        <input id="s-model" list="s-models" autocomplete="off" spellcheck="false">
+        <datalist id="s-models"></datalist>
+      </label>
+      <label id="s-effort-wrap">Effort
+        <select id="s-effort">
+          <option value="low">low (cheapest)</option>
+          <option value="medium">medium</option>
+          <option value="high">high</option>
+        </select>
+      </label>
+      <fieldset class="store">
+        <legend>Where to keep the key</legend>
+        <label class="inline"><input type="radio" name="s-store" value="session" checked> This tab only (forgotten when the tab closes)</label>
+        <label class="inline"><input type="radio" name="s-store" value="local"> Remember on this device</label>
+      </fieldset>
+      <ul class="facts small">
+        <li>The key goes from your browser straight to the provider. This site has no server and never receives it.</li>
+        <li>You pay the provider for your own usage. Set a spending limit in your provider console.</li>
+        <li>Don't save a key on a shared computer. Use a key you can revoke.</li>
+      </ul>
+      <p id="s-test-out" class="small" role="status"></p>
+    </div>
+
+    <div class="dialog-actions">
+      <button type="button" id="s-test" class="btn">Test connection</button>
+      <button type="button" id="s-forget" class="btn">Forget key</button>
+      <span class="grow"></span>
+      <button type="button" id="s-cancel" class="btn">Cancel</button>
+      <button type="submit" id="s-save" class="btn btn-primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>
