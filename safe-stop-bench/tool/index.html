@@ -4,19 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- No server, no third-party scripts. AI calls go from the visitor's browser straight to the provider they choose, with their own key. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https: http://localhost:* http://127.0.0.1:*; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
-<title>Proofline Scope Tool</title>
-<meta name="description" content="Proofline, the feature-requirements stage of the Safe-Stop Bench, running in your browser. Turn a feature idea into a reviewed 13-item scope. Bring your own AI key, or use it without AI.">
+<title>Proofline</title>
+<meta name="description" content="Proofline in your browser: take one embedded or vehicle feature from requirements to wired, testable hardware in six approved stages. Bring your own AI key, or use it without AI.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231e3a5f'/%3E%3Cpath d='M9 17l5 5 9-12' stroke='%23e6edf7' stroke-width='3.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
 <header class="topbar">
   <div class="wrap">
-    <a class="brand" href="#/">Proofline <span>scope tool</span></a>
+    <a class="brand" href="#/">Proofline <span>browser edition</span></a>
     <nav>
       <a href="../">Safe-Stop Bench</a>
+      <a href="#/sample">Pilot</a>
       <a href="#/help">How it works</a>
       <button type="button" id="ai-chip" class="chip-btn" aria-haspopup="dialog">AI: off</button>
       <button type="button" id="theme-btn" class="chip-btn" aria-label="Switch light or dark theme">Theme</button>
@@ -104,6 +105,10 @@
   </form>
 </dialog>
 
+<script src="core.js"></script>
+<script src="scope.js"></script>
+<script src="engines.js"></script>
+<script src="views.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

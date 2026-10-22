@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Safe-Stop Bench · Ketan Bakshi</title>
-<meta name="description" content="A test bench for an autonomous-vehicle (AV) safety layer. Simulation testing and failure triage, shown rather than claimed: 56 fault scenarios from Python SiL to a real-bus ESP32 HiL, every failure classified before a ticket is filed, an AI agent with human approval gates, two hardware root causes.">
-<meta property="og:title" content="Safe-Stop Bench: not every red test is a bug">
-<meta property="og:description" content="Autonomous-vehicle (AV) safety-layer test bench: 56 fault scenarios, 7 test levels from SiL to real-bus HiL, failure classification, an AI agent with human gates, signal-level root cause. By Ketan Bakshi.">
+<title>Proofline · from feature idea to a tested board</title>
+<meta name="description" content="Proofline takes one embedded or vehicle feature from idea to a tested board in six stages: requirements, gap analysis, architecture, electrical checks, integration guides and firmware design. Code computes, AI drafts with your own key, you approve every step. Free, in your browser.">
+<meta property="og:title" content="Proofline: from feature idea to a tested board, every step signed off">
+<meta property="og:description" content="Six gated stages for embedded and vehicle features. A real pilot: 34 gaps found, 4 CAN ids checked, 11 electrical findings, 2.8 minutes of AI time, $0.63. Free in your browser, bring your own AI key.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://ketan01bakshi-dev.github.io/safe-stop-bench/">
 <meta property="og:image" content="https://ketan01bakshi-dev.github.io/safe-stop-bench/bench-hil.jpg">
@@ -290,31 +290,271 @@ svg .sumbar { fill: var(--code-bg); stroke: var(--line); stroke-width: 1; }
 footer { color: var(--faint); font-size: .9rem; padding: 2.2rem 0 2.6rem; }
 footer .wrap { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 </style>
+<style>
+/* ---- product page (Proofline) ---- */
+.hero .flow { list-style: none; margin: 0; padding: 0; display: grid; gap: .55rem; counter-reset: st; }
+.hero .flow li { counter-increment: st; display: grid; grid-template-columns: 2.1rem 1fr; gap: .2rem .7rem; align-items: start; background: rgba(10, 22, 40, .55); border: 1px solid rgba(143, 180, 230, .22); border-radius: 12px; padding: .65rem .8rem; }
+.hero .flow li::before { content: counter(st); grid-row: span 2; width: 2.1rem; height: 2.1rem; border-radius: 50%; background: #e6edf7; color: #0a1628; display: grid; place-items: center; font-weight: 800; }
+.hero .flow b { color: var(--hero-ink); font-size: 1rem; }
+.hero .flow span { color: var(--hero-muted); font-size: .88rem; line-height: 1.35; }
+.hero .flow .gate { grid-column: 2; font-family: var(--mono); font-size: .7rem; letter-spacing: .05em; text-transform: uppercase; color: #ffd08a; }
+.flow-cap { color: var(--hero-muted); font-size: .85rem; margin: .7rem 0 0; }
+@media (min-width: 1001px) { .stats.s6 ul { grid-template-columns: repeat(6, 1fr); } }
+.stats .src { display: block; text-align: right; font-size: .78rem; color: var(--faint); margin: .4rem .2rem 0; }
+.mv { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 860px) { .mv { grid-template-columns: 1fr; } }
+.mv article { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 1.3rem 1.4rem; }
+.mv small { font-family: var(--mono); font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--gap); font-weight: 600; }
+.mv p.big { font-size: 1.28rem; line-height: 1.45; font-weight: 600; margin: .4rem 0 .5rem; text-wrap: pretty; }
+.mv p { margin: 0; color: var(--muted); }
+.aud { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+@media (max-width: 1000px) { .aud { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px) { .aud { grid-template-columns: 1fr; } }
+.aud article { background: var(--card); border: 1px solid var(--line); border-top: 4px solid var(--navy); border-radius: 12px; padding: 1.05rem 1.15rem; display: flex; flex-direction: column; gap: .35rem; }
+.aud article.sec2 { border-top-color: var(--line); background: transparent; }
+.aud h3 { margin: 0; font-size: 1.08rem; }
+.aud p { margin: 0; color: var(--muted); font-size: .97rem; }
+.aud .get { color: var(--ink); font-weight: 600; margin-top: auto; padding-top: .3rem; }
+.stages6 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+@media (max-width: 900px) { .stages6 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px) { .stages6 { grid-template-columns: 1fr; } }
+.stages6 article { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.15rem; display: flex; flex-direction: column; gap: .3rem; }
+.stages6 .n { font-family: var(--mono); font-size: .75rem; color: var(--faint); }
+.stages6 h3 { margin: 0; font-size: 1.08rem; }
+.stages6 p { margin: 0; color: var(--muted); font-size: .96rem; }
+.stages6 .pilot { font-size: .9rem; color: var(--ink); border-top: 1px dashed var(--line); padding-top: .4rem; margin-top: auto; }
+.stages6 a { font-size: .9rem; font-weight: 600; }
+.rule3 { display: flex; flex-wrap: wrap; gap: .6rem; margin: 1.2rem 0 0; }
+.rule3 span { border: 1px solid var(--line); border-radius: 999px; padding: .35rem .9rem; background: var(--card); font-weight: 600; }
+.rule3 span b { color: var(--gap); }
+.value { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+@media (max-width: 900px) { .value { grid-template-columns: 1fr; } }
+.value article { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 1.1rem 1.2rem; }
+.value strong.big { display: block; font-size: 2rem; line-height: 1.1; color: var(--navy-ink); letter-spacing: -.01em; }
+.value small { font-family: var(--mono); font-size: .72rem; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); }
+.value p { margin: .4rem 0 0; color: var(--muted); }
+.value ul { margin: .5rem 0 0; padding-left: 1.1rem; color: var(--muted); }
+.value li { margin: .25rem 0; }
+.note { font-size: .92rem; color: var(--muted); margin: 1rem 0 0; padding: .7rem 1rem; border: 1px dashed var(--line); border-radius: 10px; }
+.cmp-wrap { overflow-x: auto; }
+table.cmp { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; font-size: .96rem; min-width: 40rem; }
+table.cmp th, table.cmp td { padding: .6rem .8rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+table.cmp thead th { background: var(--code-bg); font-size: .85rem; }
+table.cmp td.y { color: var(--pass); font-weight: 600; }
+table.cmp td.n { color: var(--faint); }
+table.cmp th.me, table.cmp td.me { background: var(--tint-gap); }
+.bench-two { display: grid; grid-template-columns: 1.1fr 1fr; gap: 1.6rem; align-items: start; }
+@media (max-width: 900px) { .bench-two { grid-template-columns: 1fr; } }
+.bench-two .bench-card { background: var(--hero-a); }
+.bench-two ul.facts { margin: 0; padding-left: 1.1rem; }
+.bench-two ul.facts li { margin: .35rem 0; }
+details.deep { margin-top: 1.6rem; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: .4rem 1.2rem; }
+details.deep > summary { cursor: pointer; font-weight: 700; font-size: 1.1rem; padding: .7rem 0; }
+details.deep[open] > summary { border-bottom: 1px solid var(--line); }
+details.deep section.block { padding-top: 2.6rem; }
+.faq { display: grid; gap: .6rem; max-width: 56rem; }
+.faq details { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: .2rem 1rem; }
+.faq summary { cursor: pointer; font-weight: 700; padding: .65rem 0; }
+.faq p { margin: 0 0 .8rem; color: var(--muted); }
+.ctaband { margin: 4rem 0 0; background: linear-gradient(160deg, var(--hero-a), var(--hero-b)); color: var(--hero-ink); border-radius: 16px; padding: 2rem 1.6rem; display: flex; gap: 1rem 2rem; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.ctaband h2 { margin: 0 0 .3rem; font-size: clamp(1.4rem, 3vw, 1.9rem); }
+.ctaband p { margin: 0; color: #c9d6e8; }
+.ctaband .btns { margin: 0; }
+.topbar .try-btn { background: #e6edf7; color: #0a1628 !important; border-radius: 999px; padding: .2rem .8rem; font-weight: 700; }
+</style>
 </head>
 <body>
 
 <div class="topbar"><div class="wrap">
-  <span class="brand">Ketan Bakshi</span>
+  <span class="brand">Proofline · by Ketan Bakshi</span>
   <nav aria-label="On this page">
-    <a href="tool/">Try the tool</a><a href="#status">Status</a><a href="#problem">Problem</a><a href="#day">Lead's day</a><a href="#triage">Triage</a><a href="#levels">Levels</a><a href="#release">Release</a><a href="#limits">Limits</a><a href="#hunts">Root causes</a>
+    <a href="#mission">Mission</a><a href="#who">Who it's for</a><a href="#how">How it works</a><a href="#time">Time</a><a href="#money">Cost</a><a href="#why">Why Proofline</a><a href="#bench">The bench</a><a href="#faq">FAQ</a><a class="try-btn" href="tool/">Try it free</a>
   </nav>
 </div></div>
 
 <header class="hero">
   <div class="wrap">
     <div>
-      <p class="kicker">Safe-Stop Bench · Autonomous-vehicle (AV) safety-layer testing</p>
-      <h1>Not every <span class="red">red</span> test is a bug.</h1>
-      <p class="lede">I built a test bench that tells them apart. The same 56 fault scenarios run from Python SiL to two ESP32 boards on a real CAN bus, and every failure is sorted into <b>product defect</b>, <b>test error</b>, <b>bench fault</b> or <b>coverage gap</b> before anyone files a ticket.</p>
+      <p class="kicker">Proofline · built on the Safe-Stop Bench</p>
+      <h1>From feature idea to a <span class="red">tested board</span>, with every step signed off.</h1>
+      <p class="lede">Proofline takes one embedded or vehicle feature through six stages, from agreed requirements to wiring guides and firmware design notes. Code computes every number and every status. AI drafts, with your own key or not at all. You approve each stage, and the approval is locked to exactly what you approved.</p>
       <div class="btns">
-        <a class="btn btn-primary" href="tool/">Try the scope tool</a>
-        <a class="btn btn-ghost" href="https://github.com/ketan01bakshi-dev/safe-stop-bench" rel="noopener">View the code on GitHub</a>
-        <a class="btn btn-ghost" href="../assets/resume.docx" download="Ketan_Bakshi_Resume.docx">Résumé (Word)</a>
+        <a class="btn btn-primary" href="tool/">Try Proofline free</a>
+        <a class="btn btn-ghost" href="tool/#/sample">Explore the real pilot</a>
       </div>
-      <ul class="chips" aria-label="About this project">
-        <li>Built with Claude Code to my spec</li><li>Synthetic data</li><li>MIT licence</li><li>CI on every push</li>
+      <ul class="chips" aria-label="About Proofline">
+        <li>Free, no sign-up</li><li>Runs in your browser</li><li>Your data stays with you</li><li>AI optional: bring your own key</li>
       </ul>
     </div>
+    <div>
+      <ol class="flow" aria-label="The six stages">
+        <li><b>Feature Requirements</b><span>13 questions until the scope is complete</span><em class="gate">gate: scope review</em></li>
+        <li><b>Gap Analysis &amp; Plan</b><span>what you have, what's missing, what to buy</span><em class="gate">gate: plan review</em></li>
+        <li><b>Network &amp; Node Architecture</b><span>boards, CAN ids, bus load, flash fit</span><em class="gate">gate: architecture review</em></li>
+        <li><b>Electrical Design Checks</b><span>pins, dividers, drivers, power budget</span><em class="gate">gate: electrical review</em></li>
+        <li><b>Integration Guides</b><span>wiring and measuring steps, each with a check</span><em class="gate">gate: guide review</em></li>
+        <li><b>Firmware Requirements</b><span>design notes, owner decisions, maturity ladder</span><em class="gate">gate: design review</em></li>
+      </ol>
+      <p class="flow-cap">Change an earlier stage and every later approval is flagged as stale. Nothing slips through on an old version.</p>
+    </div>
+  </div>
+</header>
+
+<div class="wrap stats s6" aria-label="The pilot in numbers">
+  <ul>
+    <li><strong>6/6</strong><span>stages approved on the first real feature</span></li>
+    <li><strong>34</strong><span>gaps found, each with an owner and a plan item</span></li>
+    <li><strong>4</strong><span>new CAN ids allocated and rule-checked</span></li>
+    <li><strong>11</strong><span>electrical findings before any part was fitted</span></li>
+    <li><strong>2.8 min</strong><span>of AI time across all stages</span></li>
+    <li><strong>$0.63</strong><span>of AI tokens for the whole feature</span></li>
+  </ul>
+  <span class="src">Measured on pilot 1: over-the-air updates on the Safe-Stop Bench, October 2026. <a href="tool/#/sample">See every stage</a>.</span>
+</div>
+
+<main class="wrap">
+
+<section class="block" id="mission">
+  <div class="sec-head">
+    <span class="sec-num">01 /</span>
+    <h2 class="sec">Mission and vision</h2>
+  </div>
+  <div class="mv">
+    <article>
+      <small>Mission</small>
+      <p class="big">Help any embedded team take a feature from idea to a tested board without skipping the engineering.</p>
+      <p>Every requirement agreed, every gap named, every number computed, every step signed off by a person.</p>
+    </article>
+    <article>
+      <small>Vision</small>
+      <p class="big">The discipline of a large automotive programme, for teams of one to ten, at the cost of a few AI calls.</p>
+      <p>Traceable requirements, gated reviews and measured evidence, without a tooling licence or a systems-engineering department.</p>
+    </article>
+  </div>
+</section>
+
+<section class="block" id="who">
+  <div class="sec-head">
+    <span class="sec-num">02 /</span>
+    <h2 class="sec">Who it's for</h2>
+    <p>Anyone adding a feature to hardware that has to work the first time it's wired up.</p>
+  </div>
+  <div class="aud">
+    <article>
+      <h3>Small hardware teams and startups</h3>
+      <p>EV, robotics, drones, IoT: a few engineers, no systems engineer, a deadline.</p>
+      <p class="get">You get the scope checklist, gap list, CAN plan and wiring checks a big programme would run.</p>
+    </article>
+    <article>
+      <h3>Test and validation leads</h3>
+      <p>You need evidence a feature is ready, not a slide that says so.</p>
+      <p class="get">You get approvals locked to the exact version, and stale work flagged on its own.</p>
+    </article>
+    <article>
+      <h3>Students, makers and career switchers</h3>
+      <p>You want to learn how automotive teams actually take a feature to the bench.</p>
+      <p class="get">You get a real, finished worked example to step through, and the same tool for your own project.</p>
+    </article>
+    <article class="sec2">
+      <h3>Hiring managers</h3>
+      <p>Proofline is how I work, made public: rules before AI, evidence before claims.</p>
+      <p class="get"><a href="#about">About me</a> · <a href="../assets/resume.docx" download="Ketan_Bakshi_Resume.docx">Résumé (Word)</a></p>
+    </article>
+  </div>
+</section>
+
+<section class="block" id="how">
+  <div class="sec-head">
+    <span class="sec-num">03 /</span>
+    <h2 class="sec">How it works: six stages, six sign-offs</h2>
+    <p>Each stage reads only approved work from the stages before it. Under each one is what it produced on the real pilot.</p>
+  </div>
+  <div class="stages6">
+    <article><span class="n">Stage 1</span><h3>Feature Requirements</h3><p>A chat (or a form) fills a 13-item checklist. A quote must really be in your words; "TBD" blocks completion until you decide.</p><p class="pilot">Pilot: 13 items, 1 open decision carried forward.</p><a href="tool/#/sample">Open stage 1 →</a></article>
+    <article><span class="n">Stage 2</span><h3>Gap Analysis &amp; Overall Plan</h3><p>Every need is checked against what your project already has, on six axes. Code decides covered, partial or missing; the parts list is proposed, never ordered.</p><p class="pilot">Pilot: 20 needs, 34 gaps, 25 work items.</p><a href="tool/#/sample/plan">Open stage 2 →</a></article>
+    <article><span class="n">Stage 3</span><h3>Network &amp; Node Architecture</h3><p>Functions go to boards, messages to CAN. Code allocates ids above your safety frames and works out the bus load and flash fit.</p><p class="pilot">Pilot: 17 functions, 4 new CAN ids, 13 risks.</p><a href="tool/#/sample/architecture">Open stage 3 →</a></article>
+    <article><span class="n">Stage 4</span><h3>Electrical Design Checks</h3><p>Pins against your board's limits, resistor dividers at every worst-case corner, transistor drivers, the power budget. Unknown currents stay unknown.</p><p class="pilot">Pilot: 11 findings, including a supply flaw caught on paper.</p><a href="tool/#/sample/electrical">Open stage 4 →</a></article>
+    <article><span class="n">Stage 5</span><h3>Integration Guides</h3><p>Step-by-step wiring and measuring guides. You type each reading; code checks it against the expected range. The tool never touches a board.</p><p class="pilot">Pilot: 4 guides; steps blocked until parts arrive.</p><a href="tool/#/sample/guides">Open stage 5 →</a></article>
+    <article><span class="n">Stage 6</span><h3>Firmware Requirements</h3><p>Design notes per module, traced to needs, with every new behaviour behind a switch that starts off. Your owner decisions are recorded, and a maturity ladder runs from design (F0) to release (F5).</p><p class="pilot">Pilot: 9 modules reached F3 (unit and mutation tests) on the PC.</p><a href="tool/#/sample/firmware">Open stage 6 →</a></article>
+  </div>
+  <div class="rule3"><span><b>Rules</b> decide</span><span><b>AI</b> drafts</span><span><b>You</b> approve</span></div>
+</section>
+
+<section class="block" id="time">
+  <div class="sec-head">
+    <span class="sec-num">04 /</span>
+    <h2 class="sec">How much time it saves</h2>
+    <p>What we measured on the pilot, and what Proofline takes off your plate.</p>
+  </div>
+  <div class="value">
+    <article><small>Measured</small><strong class="big">2.8 min</strong><p>Total AI time for the whole feature, across 11 calls. Each draft arrives in 10 to 60 seconds, so the slow part is your decision, not the writing.</p></article>
+    <article><small>Measured</small><strong class="big">29 hours</strong><p>From the first approved scope to approved firmware design notes, all six gates, on the calendar. That includes a night's sleep: the reviews themselves took seconds to minutes each.</p></article>
+    <article><small>Work it does for you</small>
+      <ul>
+        <li>The gap list against what you already have</li>
+        <li>CAN id allocation and bus-load sums</li>
+        <li>Worst-case resistor-divider corners</li>
+        <li>Wiring and measurement checklists</li>
+        <li>Design-note skeletons with traceability</li>
+      </ul>
+    </article>
+  </div>
+  <p class="note">We have not timed the same work done by hand yet, so there is no "hours saved" figure here. If you run a feature through Proofline and time it against your usual way, <a href="mailto:ketan01bakshi@gmail.com?subject=Proofline%20timing">tell me</a> and your measured result goes on this page.</p>
+</section>
+
+<section class="block" id="money">
+  <div class="sec-head">
+    <span class="sec-num">05 /</span>
+    <h2 class="sec">What it costs, and what it earns</h2>
+  </div>
+  <div class="value">
+    <article><small>Revenue</small><strong class="big">₹0</strong><p>Proofline is free. No account, no subscription, no data collection. The bench code is MIT-licensed on GitHub.</p></article>
+    <article><small>Cost per feature</small><strong class="big">$0.63</strong><p>The measured AI cost of the whole pilot at API prices (163k tokens), on your own key and paid straight to your provider. With AI switched off it costs nothing.</p></article>
+    <article><small>Cost it helped avoid on the pilot</small>
+      <ul>
+        <li>A supply abort threshold the board may never reach (it can reset first) was flagged before any part was bought or any firmware flashed.</li>
+        <li>The one proposed purchase clashed with a "no new parts" rule, so it became a decision for a person, not an order.</li>
+        <li>On the bench, 48 false failures from one dropped CAN link were filed as a bench fault, not 48 bug tickets.</li>
+      </ul>
+    </article>
+  </div>
+</section>
+
+<section class="block" id="why">
+  <div class="sec-head">
+    <span class="sec-num">06 /</span>
+    <h2 class="sec">Why Proofline</h2>
+    <p>Most AI tools write text you then have to check. Proofline flips it: code computes and checks, AI only fills in drafts, and nothing moves on without a person.</p>
+  </div>
+  <div class="why">
+    <article class="wcard"><h3>AI can't approve anything</h3><p>The model never marks a requirement done, a gap closed or a stage approved. A made-up quote, an unknown board or a bad CAN id is dropped by code, and the page says why.</p></article>
+    <article class="wcard"><h3>Every number is worked out</h3><p>Bus load, CAN ids, divider corners and transistor drivers are calculated step by step on the page. Estimates are labelled as estimates.</p></article>
+    <article class="wcard"><h3>Approvals can't go stale quietly</h3><p>Each approval is locked to a SHA-256 of what was approved. Edit the scope and every later stage shows "stale" until it is redone.</p></article>
+  </div>
+  <div class="cmp-wrap" style="margin-top:1.4rem">
+    <table class="cmp">
+      <thead><tr><th></th><th class="me">Proofline</th><th>Spreadsheet + an AI chat</th><th>Enterprise requirements tools</th></tr></thead>
+      <tbody>
+        <tr><th>Cost to start</th><td class="me y">Free</td><td>Free to low</td><td class="n">Licences, admin</td></tr>
+        <tr><th>Time to first result</th><td class="me y">Minutes, in a browser</td><td>Minutes</td><td class="n">Weeks of setup</td></tr>
+        <tr><th>Numbers computed by code</th><td class="me y">Yes, shown step by step</td><td class="n">Whatever the chat says</td><td>Usually not for hardware</td></tr>
+        <tr><th>AI can mark work as done</th><td class="me y">Never</td><td class="n">Nothing stops it</td><td>Depends on setup</td></tr>
+        <tr><th>Approval locked to the exact version</th><td class="me y">Yes, with stale detection</td><td class="n">No</td><td class="y">Yes</td></tr>
+        <tr><th>Wiring guides with checked readings</th><td class="me y">Yes</td><td class="n">No</td><td class="n">No</td></tr>
+        <tr><th>Many users, compliance workflows</th><td class="me n">Not yet: one browser, export to share</td><td class="n">No</td><td class="y">Yes</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="block" id="bench">
+  <div class="sec-head">
+    <span class="sec-num">07 /</span>
+    <h2 class="sec">The proof: built and tested on a real bench</h2>
+    <p class="sub-h">Not every red test is a bug.</p>
+    <p>Proofline grew out of the Safe-Stop Bench, a test bench for an autonomous vehicle's safety layer. Its first feature, over-the-air updates, is the pilot you can explore.</p>
+  </div>
+  <div class="bench-two">
     <figure class="bench-card">
       <div class="photo">
         <img src="bench-hil.jpg" width="1230" height="782" alt="The hardware-in-the-loop bench on a desk: two ESP32-S3 boards, each wired to a blue MCP2515 CAN module, the two modules joined by a twisted-pair CAN bus, both boards connected to a laptop over USB.">
@@ -337,53 +577,22 @@ footer .wrap { display: flex; justify-content: space-between; gap: 1rem; flex-wr
         </ol>
       </figcaption>
     </figure>
-  </div>
-</header>
-
-<div class="wrap stats" aria-label="Key numbers">
-  <ul>
-    <li><strong>56</strong><span>fault scenarios, traced to requirements</span></li>
-    <li><strong>7</strong><span>test levels, SiL to real-bus HiL</span></li>
-    <li><strong>14/14</strong><span>seeded bugs caught by the suite</span></li>
-    <li><strong>56/56</strong><span>exact back-to-back match, checked on every push</span></li>
-    <li><strong>12/12</strong><span>OTA release checks on the real board</span></li>
-    <li><strong>349</strong><span>automated tests</span></li>
-    <li><strong>0/22</strong><span>TLS handshakes stall the control loop after the root-cause fix (was 18/19)</span></li>
-  </ul>
-</div>
-
-<main class="wrap">
-
-<section class="block" id="status">
-  <div class="sec-head">
-    <span class="sec-num">00 /</span>
-    <h2 class="sec">Where the project stands now</h2>
-    <p>Public code: version 2.39. A private build is ahead of it, updated 22 October 2026. Work is still going on; this is what is done, what is proven and what is not.</p>
-  </div>
-  <div class="try">
     <div>
-      <small>New · free to use</small>
-      <h3>Try Proofline's first stage in your browser</h3>
-      <p>Describe a feature for your own embedded or vehicle project and agree a 13-item scope (FR-01 to FR-13) with the same rules the bench's tool uses. Your approval is bound to a SHA-256 of what you approved. It works without AI; for AI help, add <b>your own</b> Claude, OpenAI or local-model key. The page has no server, your key goes only to the provider you pick, and your data stays in your browser.</p>
+      <ul class="facts">
+        <li><b>56 fault scenarios</b>, traced to requirements, run the same way at <b>7 test levels</b> from Python SiL to two ESP32 boards on a real CAN bus.</li>
+        <li><b>14/14 seeded bugs</b> caught; <b>56/56</b> exact back-to-back match with the reference, checked on every push.</li>
+        <li><b>12/12</b> over-the-air release checks on the real board, including a power cut at every persistent write.</li>
+        <li>Every red result is sorted into <b>product defect</b>, <b>test error</b>, <b>bench fault</b> or <b>coverage gap</b> before anyone files a ticket.</li>
+        <li>Two hardware root causes found at signal level; <b>0/22</b> TLS handshakes stall the control loop after the fix (was 18/19).</li>
+      </ul>
+      <div class="btns" style="margin-top:1rem">
+        <a class="btn btn-primary" href="https://github.com/ketan01bakshi-dev/safe-stop-bench" rel="noopener">View the code on GitHub</a>
+      </div>
     </div>
-    <a class="btn btn-primary" href="tool/">Open the scope tool</a>
   </div>
-  <div class="needs">
-    <article class="ncard"><small>In progress · private build</small><h3>Proofline: from a bench to a product development tool</h3><p>The bench is now the test end of a tool named Proofline. A feature request runs through six stages, each closed by a person's approval: Feature Requirements, Gap Analysis &amp; Overall Plan, Network &amp; Node Architecture, Electrical Design Checks, Integration Guides and Firmware Requirements. The first feature is an over-the-air update of the controller. The tool never orders parts. The private build passes 1,647 automated tests.</p></article>
-    <article class="ncard"><small>Done · 16–17 Oct</small><h3>Owner decisions recorded and applied</h3><p>The tool turned the OTA plan's open questions into five owner decisions, each bound to the hash of the approved scope, plan and architecture. Decided: programming traffic capped at 25 % of the bus, a per-board security secret never kept in source, two new CAN ids, and a supply floor of 3.7 V (abort at 3.0 V) on the controller's 5 V rail. The commit logic stays switched off until the release checks are re-run.</p></article>
-    <article class="ncard"><small>Finding · 22 Oct</small><h3>The electrical checks questioned a decided threshold</h3><p>The electrical stage flagged that the controller board may reset before its supply ever reaches the 3.0 V abort level (regulator dropout plus brown-out). A re-check partly confirmed it: the mechanism is real, the first estimate was too pessimistic, and the board's regulator is not recorded anywhere. The note lists the one bench measurement that settles it; nothing is assumed.</p></article>
-    <article class="ncard"><small>Done, draft · 22 Oct</small><h3>Firmware that reads the supply</h3><p>A switched-off-by-default firmware module reads the supply divider, flags an open or saturated input, and refuses an update when the CAN and ADC readings disagree. Built with the flag off, the controller image matches the committed baseline in flash and RAM. Tests were written blind by a separate agent run; 52 of 55 mutants killed, 3 triaged as equivalent.</p></article>
-    <article class="ncard"><small>Done, drafts</small><h3>Supply model and firmware modules, checked by independent tests</h3><p>The 12 V supply and battery model catches 11/11 deliberately broken variants and matches an independent Python reference 7/7. The firmware drafts (ISO-TP, UDS download, signature check) were tested with tests written from the specifications by a separate agent run.</p></article>
-    <article class="ncard"><small>Not done</small><h3>No new hardware touched yet</h3><p>None of the new firmware has been flashed, no circuit has been fitted or measured, and the signature check has not been timed on the board. Those steps wait for the owner and the parts.</p></article>
-    <article class="ncard"><small>Done</small><h3>Plant model verified in CI</h3><p>The vehicle model is restated in OpenModelica and graded on a maturity ladder on every push. It reached level 2 (checked against the bench's own plant): 36/36 hand-calculation checks, 9/9 deliberately broken variants caught, 15/15 back-to-back checks. Level 3 needs measured data, which does not exist yet.</p></article>
-    <article class="ncard"><small>Done</small><h3>The model found a bench bug</h3><p>The back-to-back check showed the bench's own reference plant delayed the brake by 79 ms instead of 80. Fixed, with the matrix unchanged at 55/56 plus one known finding. Two model faults were found the same way, and each now has a guard.</p></article>
-    <article class="ncard"><small>Done</small><h3>Persistence requirements</h3><p>"Stop if it persists for 50 ms" now has test cases at the boundary. On the controller, a 61 ms breach stops and a 60 ms one does not; the same holds on the two boards. A slow-debounce bug is caught by three cases.</p></article>
-    <article class="ncard"><small>Built, not run</small><h3>A physical witness: the vehicle link</h3><p>A UDP link contract, a chassis state machine and a simulated chassis are built and tested (27 hand-written cases, a dead-man stop at exactly 201 ms on the virtual clock). No chassis has been driven yet; only the simulated one.</p></article>
-    <article class="ncard next"><small>Prepared, not run</small><h3>Hardware still to come</h3><p>A relay power cut of the controller board, CAN FD and a second bus sniffer are planned. Run results will be added when they exist.</p></article>
-  </div>
-</section>
-
-<section class="block" id="problem">
+  <details class="deep">
+    <summary>Technical deep dive: triage, test levels, release, limits and root causes</summary>
+    <section class="block" id="problem">
   <div class="sec-head">
     <span class="sec-num">01 /</span>
     <h2 class="sec">The problem this bench tackles</h2>
@@ -676,25 +885,67 @@ footer .wrap { display: flex; justify-content: space-between; gap: 1rem; flex-wr
   <p class="lesson">The method, not luck: state a hypothesis, build the instrument that can reject it, and prove the fix with the same instrument.</p>
 </section>
 
-<section class="about" aria-label="About the author">
+
+  </details>
+</section>
+
+<section class="block" id="status">
+  <div class="sec-head">
+    <span class="sec-num">08 /</span>
+    <h2 class="sec">Where it stands, honestly</h2>
+    <p>Public bench code: version 2.39. The private build is ahead, updated 22 October 2026, with 1,647 automated tests passing.</p>
+  </div>
+  <div class="needs">
+    <article class="ncard"><small>Live · 22 Oct</small><h3>All six stages in your browser</h3><p>The browser edition runs every Proofline stage on your own project, with the same rules as the local tool. It has no server, and AI is optional with your own key. The local tool also scans a code repository, runs ngspice, and builds and mutation-tests firmware.</p></article>
+    <article class="ncard"><small>Done · 16–17 Oct</small><h3>Owner decisions recorded and applied</h3><p>Five decisions from the pilot, each tied to the approved versions: programming traffic capped at 25 % of the bus, a per-board security secret kept out of source, two new CAN ids, and a supply floor of 3.7 V (abort at 3.0 V).</p></article>
+    <article class="ncard"><small>Finding · 22 Oct</small><h3>The electrical checks questioned a decided threshold</h3><p>The board may reset before its supply ever reaches the 3.0 V abort level. A re-check partly confirmed it. The board's regulator part isn't recorded anywhere, so one bench measurement will settle it; nothing is assumed.</p></article>
+    <article class="ncard"><small>Done, draft · 22 Oct</small><h3>Firmware that reads the supply</h3><p>A module that starts switched off reads the supply divider and refuses an update when the CAN and ADC readings disagree. Its tests were written blind by a separate agent run: 52 of 55 mutants killed, 3 equivalent.</p></article>
+    <article class="ncard"><small>Not done</small><h3>No new hardware touched yet</h3><p>None of the new firmware has been flashed, and no new circuit fitted or measured. Those steps wait for the parts and for me.</p></article>
+    <article class="ncard"><small>Next</small><h3>Hardware still to come</h3><p>A relay power cut of the controller board, CAN FD and a second bus sniffer. Results will appear here when they exist.</p></article>
+  </div>
+</section>
+
+<section class="block" id="faq">
+  <div class="sec-head">
+    <span class="sec-num">09 /</span>
+    <h2 class="sec">Questions</h2>
+  </div>
+  <div class="faq">
+    <details><summary>Is it really free?</summary><p>Yes. There is no account and no paid tier. If you switch AI on, you pay your own AI provider for your own usage; the pilot cost $0.63 at API prices.</p></details>
+    <details><summary>Where does my data go?</summary><p>Nowhere. Everything you type is saved in your browser only. The page has no server, no analytics and no third-party scripts. Export a request as a file to keep it or share it.</p></details>
+    <details><summary>Do I need an AI key?</summary><p>No. Without AI, code asks the questions and makes plain drafts you edit. With a key you get drafts in seconds. It works with Anthropic (Claude), OpenAI, or any OpenAI-compatible endpoint, including a local model.</p></details>
+    <details><summary>Is my API key safe?</summary><p>It goes from your browser straight to the provider you pick, and by default it is forgotten when the tab closes. Use a key you can revoke, set a spending limit, and don't save it on a shared computer.</p></details>
+    <details><summary>Can my team work on the same feature?</summary><p>Not at the same time yet. One person works in one browser and exports the request; a colleague imports it. Shared workspaces are on the list.</p></details>
+    <details><summary>Does it claim ISO 26262 or any other compliance?</summary><p>No. Standards are used as a reference only. Proofline helps you build the evidence; it does not certify anything.</p></details>
+    <details><summary>Will it order parts or flash my boards?</summary><p>Never. It proposes parts and writes guides. You buy, wire, flash and measure, and record what you found.</p></details>
+  </div>
+</section>
+
+<section class="about" id="about" aria-label="About the author">
   <div>
     <p class="kicker">Behind the bench</p>
     <h2>Ketan Bakshi, automotive XiL test lead</h2>
-    <p>10+ years finding out why software fails on the bench and driving the fix to closure. At Daimler Truck I lead MiL, SiL and HiL test strategy for adaptive cruise control, emergency braking and e-mobility functions, run shared HiL and SiL benches used by five teams, and halved verification cycle time through structured root-cause analysis.</p>
-    <p>This bench is how I work, made public: classify before you file, prove the fix with the instrument that found it, and let AI draft but never decide.</p>
+    <p>10+ years finding out why software fails on the bench and driving the fix to closure. At Daimler Truck I led MiL, SiL and HiL test strategy for adaptive cruise control, emergency braking and e-mobility functions, ran shared HiL and SiL benches used by five teams, and halved verification cycle time through structured root-cause analysis.</p>
+    <p>Proofline and this bench are how I work, made public: classify before you file, prove the fix with the instrument that found it, and let AI draft but never decide.</p>
   </div>
   <div class="btns">
-    <a class="btn btn-primary" href="mailto:ketan01bakshi@gmail.com?subject=Safe-Stop%20Bench">Email me</a>
+    <a class="btn btn-primary" href="mailto:ketan01bakshi@gmail.com?subject=Proofline">Email me</a>
     <a class="btn btn-ghost" href="https://linkedin.com/in/ketan-bakshi-b9380950" rel="noopener">LinkedIn</a>
     <a class="btn btn-ghost" href="https://github.com/ketan01bakshi-dev/safe-stop-bench" rel="noopener">Code on GitHub</a>
   </div>
 </section>
 
+
+<section class="ctaband" aria-label="Get started">
+  <div><h2>Take one feature through Proofline today.</h2><p>Free, in your browser, with or without AI. Start with the real pilot if you want to see the finished thing first.</p></div>
+  <div class="btns"><a class="btn btn-primary" href="tool/">Start your feature</a><a class="btn btn-ghost" href="tool/#/sample">Explore the pilot</a></div>
+</section>
+
 </main>
 
 <footer><div class="wrap">
-  <span>© 2026 Ketan Bakshi · Code under the MIT licence</span>
-  <span>Built with Claude Code · Synthetic data throughout</span>
+  <span>© 2026 Ketan Bakshi · Bench code under the MIT licence · Proofline is free to use</span>
+  <span>Built with Claude Code · Synthetic data throughout · No compliance claim</span>
 </div></footer>
 
 <script>
